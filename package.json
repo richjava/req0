@@ -1,0 +1,26 @@
+{
+  "name": "req0",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Req0 — requirement operating system: a spec pack, a cockpit, and later Jev-backed proof.",
+  "type": "module",
+  "bin": {
+    "req0": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "req0": "tsx src/cli.ts",
+    "start": "tsx src/cli.ts start",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=22.15"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

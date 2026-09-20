@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Req0 — Requirement Owner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <p class="sidebar-brand">Req0</p>
+        <p class="sidebar-pack" id="pack-title">Loading…</p>
+        <p class="nav-label">Sections</p>
+        <nav id="sections" class="nav-list"></nav>
+        <p class="nav-label">Findings</p>
+        <ul id="findings" class="list-rows"></ul>
+      </aside>
+
+      <div class="main">
+        <header class="topbar">
+          <div class="topbar-copy">
+            <p class="eyebrow">Requirement Owner</p>
+            <p class="going" id="how-going">Loading…</p>
+          </div>
+          <div class="topbar-actions">
+            <p class="hint" id="next-hint"></p>
+            <button type="button" class="btn-primary" id="next-action" disabled>…</button>
+          </div>
+        </header>
+
+        <section class="pills" aria-label="Health">
+          <article class="status-pill" data-meter="spec" data-state="empty">
+            <span class="status-pill-name">Spec</span>
+            <strong id="meter-spec">—</strong>
+          </article>
+          <article class="status-pill" data-meter="ready" data-state="not_yet">
+            <span class="status-pill-name">Ready</span>
+            <strong id="meter-ready">Not yet</strong>
+          </article>
+          <article class="status-pill" data-meter="build" data-state="not_yet">
+            <span class="status-pill-name">Build</span>
+            <strong id="meter-build">Not yet</strong>
+          </article>
+          <article class="status-pill" data-meter="proof" data-state="not_yet">
+            <span class="status-pill-name">Proof</span>
+            <strong id="meter-proof">Not yet</strong>
+          </article>
+        </section>
+
+        <div class="create-bar hidden" id="create-bar">
+          <label class="field">
+            New requirement id
+            <input class="input" id="new-id" placeholder="invoice-approval" autocomplete="off" />
+          </label>
+          <button type="button" class="btn-secondary" id="create-new">Create pack</button>
+          <p class="hint" id="create-error"></p>
+        </div>
+
+        <section class="panel" id="workspace">
+          <label class="editor-label" for="editor">requirement.md</label>
+          <textarea class="textarea" id="editor" spellcheck="true"></textarea>
+          <p class="save-state" id="save-state"></p>
+        </section>
+      </div>
+    </div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

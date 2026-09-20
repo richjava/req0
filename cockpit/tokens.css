@@ -1,0 +1,118 @@
+/* Theme-independent scale */
+:root {
+  --font-ui: Inter, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-16: 16px;
+  --text-20: 20px;
+  --text-24: 24px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-pill: 9999px;
+
+  --sidebar-width: 248px;
+}
+
+/*
+  Surfaces (lowest → highest):
+  0 page canvas
+  1 chrome (sidebar, bars)
+  2 raised panels
+  3 inset fields / nested rows
+  Components use these names only. Hex lives per theme.
+*/
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  --color-primary: #7b68ee;
+  --color-primary-hover: #6647f0;
+  --color-on-primary: #ffffff;
+  --color-focus-ring: rgba(123, 104, 238, 0.35);
+  --surface-selected: #eeeaff;
+
+  --surface-0: #f4f5f7;
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --surface-3: #f7f8fa;
+  --surface-hover: #f0f1f4;
+  --surface-disabled: #d5d8de;
+
+  --text-primary: #202020;
+  --text-secondary: #646464;
+  --text-muted: #838383;
+  --text-on-disabled: #ffffff;
+
+  --border-subtle: #e6e8ec;
+  --border-strong: #d0d4db;
+
+  --shadow-1: none;
+  --shadow-2: 0 1px 2px rgba(32, 32, 32, 0.06), 0 8px 24px rgba(32, 32, 32, 0.04);
+  --shadow-3: 0 8px 28px rgba(32, 32, 32, 0.12);
+
+  --color-status-idle: #6b7280;
+  --color-status-draft: #c47d1a;
+  --color-status-ok: #078d3b;
+  --color-status-bad: #d92d20;
+  --color-status-progress: #7b68ee;
+
+  --color-status-idle-bg: #eef0f2;
+  --color-status-draft-bg: #fff4e0;
+  --color-status-ok-bg: #e6f6ec;
+  --color-status-bad-bg: #fdecea;
+  --color-status-progress-bg: #eeeaff;
+}
+
+/* Reserved. Do not wire a toggle. Flip html[data-theme] later. */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-primary: #8b7cf2;
+  --color-primary-hover: #9d90f5;
+  --color-on-primary: #ffffff;
+  --color-focus-ring: rgba(139, 124, 242, 0.45);
+  --surface-selected: #3a3560;
+
+  --surface-0: #16181d;
+  --surface-1: #1e2128;
+  --surface-2: #262a33;
+  --surface-3: #2e333d;
+  --surface-hover: #323844;
+  --surface-disabled: #3d4450;
+
+  --text-primary: #f2f3f5;
+  --text-secondary: #b4b8c0;
+  --text-muted: #8b909a;
+  --text-on-disabled: #9aa0aa;
+
+  --border-subtle: #323844;
+  --border-strong: #3f4654;
+
+  --shadow-1: none;
+  --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.45);
+
+  --color-status-idle: #9aa0aa;
+  --color-status-draft: #e0a03a;
+  --color-status-ok: #3dce74;
+  --color-status-bad: #f97066;
+  --color-status-progress: #8b7cf2;
+
+  --color-status-idle-bg: #2a2e37;
+  --color-status-draft-bg: #3d331f;
+  --color-status-ok-bg: #1c3d2a;
+  --color-status-bad-bg: #3d2220;
+  --color-status-progress-bg: #2e2a4a;
+}

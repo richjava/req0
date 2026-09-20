@@ -1,0 +1,199 @@
+export const REQUIRED_H2 = [
+  "Business Rules",
+  "Use Cases",
+  "Roles & Permissions",
+] as const;
+
+export const OPTIONAL_H2 = [
+  "Overview",
+  "Out of scope",
+  "Open questions",
+  "Entities",
+  "UI notes",
+] as const;
+
+export type RequiredH2 = (typeof REQUIRED_H2)[number];
+export type OptionalH2 = (typeof OPTIONAL_H2)[number];
+
+export type FindingSeverity = "error" | "warning";
+
+export type Finding = {
+  line: number;
+  severity: FindingSeverity;
+  message: string;
+};
+
+export type Permission = "allow" | "deny";
+
+export type BusinessRule = {
+  id: string;
+  title: string;
+  statement: string;
+  observable: string;
+  line: number;
+};
+
+export type UseCase = {
+  id: string;
+  title: string;
+  actor: string;
+  preconditions: string;
+  steps: string[];
+  outcome: string;
+  alternatePaths?: string;
+  line: number;
+};
+
+export type PermissionMatrix = {
+  roles: string[];
+  actions: {
+    id: string;
+    permissions: Record<string, Permission>;
+    line: number;
+  }[];
+};
+
+export type SpecAst = {
+  requirementId: string;
+  title: string;
+  optional: Partial<Record<OptionalH2, string>>;
+  businessRules: BusinessRule[];
+  useCases: UseCase[];
+  matrix: PermissionMatrix;
+};
+
+export type MeterState = "not_yet" | "empty" | "drafting" | "valid";
+
+export type NextAction = {
+  id: string;
+  label: string;
+  enabled: boolean;
+  hint?: string;
+};
+
+export type ReadyState = "not_yet" | "blocked" | "ready";
+
+export type ReadyReason =
+  | "spec_invalid"
+  | "no_api_key"
+  | "unchecked"
+  | "blockers"
+  | "passed";
+
+export type ReadyFindingKind =
+  | "persona_missing"
+  | "untestable_rule"
+  | "matrix_contradiction"
+  | "pack_gate"
+  | "section_score"
+  | "uncertain";
+
+export type ReadyFinding = {
+  id: string;
+  kind: ReadyFindingKind;
+  severity: "blocker" | "nit";
+  message: string;
+  specId?: string;
+  line?: number;
+  noul?: number;
+};
+
+export type ReadyMeter = {
+  state: ReadyState;
+  reason: ReadyReason;
+  blockers: number;
+  nits: number;
+  nextId?: string;
+  packNoul?: number;
+  findings: ReadyFinding[];
+};
+
+export type JevQuestionType = "noul" | "choice" | "score";
+
+export type JevQuestion = {
+  id: string;
+  type: JevQuestionType;
+  instructions: string;
+  criteria?: Record<string, string> | string[];
+  specId?: string;
+  section?: string;
+  state: Record<string, unknown>;
+};
+
+export type JevPack = {
+  requirementId: string;
+  catalog: "m2-authoring-v1";
+  questions: JevQuestion[];
+};
+
+export type JevAnswer = {
+  id: string;
+  type: JevQuestionType;
+  noul?: number;
+  choice?: string;
+  score?: number;
+  confidence?: number;
+};
+
+export type JevRun = {
+  specHash: string;
+  checkedAt: string;
+  answers: JevAnswer[];
+};
+
+export type AdapterId = "cursor" | "manual";
+
+export type StackChoice = {
+  id: string;
+  label: string;
+};
+
+export type Req0Config = {
+  adapter?: AdapterId;
+  stack?: StackChoice;
+};
+
+export type ProductRepo = {
+  root: string | null;
+  empty: boolean;
+  stack: StackChoice;
+  recorded: boolean;
+  adapter: AdapterId;
+};
+
+export type BuildState = "not_yet" | "running" | "succeeded" | "failed" | "stale";
+
+export type BuildMeter = {
+  state: BuildState;
+  adapter?: AdapterId;
+  message?: string;
+};
+
+export type BuildRun = {
+  specHash: string;
+  state: "running" | "succeeded" | "failed";
+  adapter: AdapterId;
+  at: string;
+  message?: string;
+};
+
+export type Health = {
+  requirementId: string;
+  spec: {
+    state: "empty" | "drafting" | "valid";
+    findings: Finding[];
+  };
+  ready: ReadyMeter;
+  build: BuildMeter;
+  proof: { state: "not_yet" };
+  nextAction: NextAction;
+  howThisIsGoing: string;
+};
+
+export type CompileResult = {
+  spec: SpecAst | null;
+  health: Health;
+  markdown: string;
+  jevPack?: JevPack;
+  implementBrief?: string;
+};

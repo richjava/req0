@@ -1,0 +1,12 @@
+# Test-only personas. Never production credentials.
+# Manager is in Finance. Cross-department cases use an Operations invoice, same login.
+personas:
+  Admin:
+    email: admin@example.test
+    password: test-only-not-production
+  Manager:
+    email: manager@example.test
+    password: test-only-not-production
+  Viewer:
+    email: viewer@example.test
+    password: test-only-not-production

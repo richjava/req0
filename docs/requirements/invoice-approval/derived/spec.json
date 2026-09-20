@@ -1,0 +1,149 @@
+{
+  "requirementId": "invoice-approval",
+  "title": "Invoice approval",
+  "optional": {
+    "Overview": "Department managers approve supplier invoices for their own department. A manager may approve only if they are the assigned approver and the invoice belongs to their department. Viewers can read invoices but cannot change status. Admins assign an approver; they cannot approve.",
+    "Out of scope": "Paying the invoice, purchase-order matching, email notifications, creating invoices, and changing a manager's or invoice's department.",
+    "Entities": "A department is a named cost centre. Tests use Finance and Operations.\n\nA manager belongs to exactly one department. The Manager persona is in Finance.\n\nAn invoice belongs to exactly one department. It has status Unpaid or Approved, and assignedApprover which is none or one manager. Unpaid means not yet approved.\n\nThe assigned approver must be a manager whose department equals the invoice's department. Role-level `approve-invoice` allow for Manager is further restricted by BR-001, BR-004, and BR-005."
+  },
+  "businessRules": [
+    {
+      "id": "BR-001",
+      "title": "Assigned manager approves a department invoice",
+      "statement": "A manager may approve an invoice only if they are its assigned approver and the invoice belongs to their department.",
+      "observable": "While logged in as that assigned manager, the Approve control is available on that unpaid invoice, and using it sets status to Approved.",
+      "line": 23
+    },
+    {
+      "id": "BR-002",
+      "title": "Viewers cannot approve invoices",
+      "statement": "A viewer must not approve an invoice.",
+      "observable": "While logged in as a viewer, the Approve control is absent or disabled, and posting an approval is rejected. Invoice status is unchanged.",
+      "line": 29
+    },
+    {
+      "id": "BR-003",
+      "title": "Admins assign a same-department manager as approver",
+      "statement": "An admin may assign as approver only a manager whose department equals the invoice's department.",
+      "observable": "While logged in as an admin, Assign approver is available on an unpaid invoice; only managers in that invoice's department are selectable; after assignment that manager can complete BR-001. A manager from another department is not listed and cannot be assigned.",
+      "line": 35
+    },
+    {
+      "id": "BR-004",
+      "title": "Managers cannot approve another department's invoices",
+      "statement": "A manager must not approve an invoice whose department is not theirs.",
+      "observable": "On an invoice for another department, Approve is absent or disabled for that manager, and posting an approval is rejected. Invoice status is unchanged.",
+      "line": 41
+    },
+    {
+      "id": "BR-005",
+      "title": "Managers cannot approve unless they are the assigned approver",
+      "statement": "A manager must not approve an invoice for which they are not the assigned approver, including when no approver is assigned.",
+      "observable": "On an unpaid invoice in their department that is unassigned or assigned to someone else, Approve is absent or disabled for that manager, and posting an approval is rejected. Invoice status is unchanged.",
+      "line": 47
+    }
+  ],
+  "useCases": [
+    {
+      "id": "UC-001",
+      "title": "Assigned manager approves a department invoice",
+      "actor": "Manager",
+      "preconditions": "The Manager persona (Finance) is logged in. An unpaid Finance invoice exists with this manager as assignedApprover.",
+      "steps": [
+        "Open the unpaid invoices list",
+        "Open the invoice",
+        "Choose Approve"
+      ],
+      "outcome": "Invoice status is Approved.",
+      "line": 55
+    },
+    {
+      "id": "UC-002",
+      "title": "Viewer tries to approve",
+      "actor": "Viewer",
+      "preconditions": "The viewer is logged in. An unpaid invoice is visible.",
+      "steps": [
+        "Open the unpaid invoices list",
+        "Open the invoice",
+        "Look for Approve"
+      ],
+      "outcome": "Approve is not available. Posting an approval is rejected. Invoice status is unchanged.",
+      "line": 66
+    },
+    {
+      "id": "UC-003",
+      "title": "Admin assigns a same-department manager",
+      "actor": "Admin",
+      "preconditions": "The admin is logged in. An unpaid Finance invoice has no assignedApprover. A Finance manager and an Operations manager exist.",
+      "steps": [
+        "Open the invoice",
+        "Choose Assign approver",
+        "Select the Finance manager"
+      ],
+      "outcome": "The Finance manager is assignedApprover and can complete UC-001. Operations managers are not selectable and cannot be assigned.",
+      "line": 77
+    },
+    {
+      "id": "UC-004",
+      "title": "Manager tries to approve another department's invoice",
+      "actor": "Manager",
+      "preconditions": "The Manager persona (Finance) is logged in. An unpaid Operations invoice is visible.",
+      "steps": [
+        "Open the unpaid invoices list",
+        "Open the Operations invoice",
+        "Look for Approve"
+      ],
+      "outcome": "Approve is not available. Posting an approval is rejected. Invoice status is unchanged.",
+      "line": 88
+    },
+    {
+      "id": "UC-005",
+      "title": "Manager tries to approve when not the assigned approver",
+      "actor": "Manager",
+      "preconditions": "The Manager persona (Finance) is logged in. An unpaid Finance invoice is visible with no assignedApprover.",
+      "steps": [
+        "Open the unpaid invoices list",
+        "Open the invoice",
+        "Look for Approve"
+      ],
+      "outcome": "Approve is not available. Posting an approval is rejected. Invoice status is unchanged.",
+      "line": 99
+    }
+  ],
+  "matrix": {
+    "roles": [
+      "Admin",
+      "Manager",
+      "Viewer"
+    ],
+    "actions": [
+      {
+        "id": "view-invoice",
+        "permissions": {
+          "Admin": "allow",
+          "Manager": "allow",
+          "Viewer": "allow"
+        },
+        "line": 114
+      },
+      {
+        "id": "assign-approver",
+        "permissions": {
+          "Admin": "allow",
+          "Manager": "deny",
+          "Viewer": "deny"
+        },
+        "line": 115
+      },
+      {
+        "id": "approve-invoice",
+        "permissions": {
+          "Admin": "deny",
+          "Manager": "allow",
+          "Viewer": "deny"
+        },
+        "line": 116
+      }
+    ]
+  }
+}

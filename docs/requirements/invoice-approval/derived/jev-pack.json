@@ -1,0 +1,448 @@
+{
+  "requirementId": "invoice-approval",
+  "catalog": "m2-authoring-v1",
+  "questions": [
+    {
+      "id": "rule.observable.BR-001",
+      "type": "noul",
+      "specId": "BR-001",
+      "instructions": "Is Statement observable via Observable?",
+      "criteria": {
+        "true": "A person or automated test could notice the Observable if the Statement holds or is violated.",
+        "false": "The Observable is vague, missing, or not something a test could notice."
+      },
+      "state": {
+        "id": "BR-001",
+        "title": "Assigned manager approves a department invoice",
+        "statement": "A manager may approve an invoice only if they are its assigned approver and the invoice belongs to their department.",
+        "observable": "While logged in as that assigned manager, the Approve control is available on that unpaid invoice, and using it sets status to Approved."
+      }
+    },
+    {
+      "id": "rule.observable.BR-002",
+      "type": "noul",
+      "specId": "BR-002",
+      "instructions": "Is Statement observable via Observable?",
+      "criteria": {
+        "true": "A person or automated test could notice the Observable if the Statement holds or is violated.",
+        "false": "The Observable is vague, missing, or not something a test could notice."
+      },
+      "state": {
+        "id": "BR-002",
+        "title": "Viewers cannot approve invoices",
+        "statement": "A viewer must not approve an invoice.",
+        "observable": "While logged in as a viewer, the Approve control is absent or disabled, and posting an approval is rejected. Invoice status is unchanged."
+      }
+    },
+    {
+      "id": "rule.observable.BR-003",
+      "type": "noul",
+      "specId": "BR-003",
+      "instructions": "Is Statement observable via Observable?",
+      "criteria": {
+        "true": "A person or automated test could notice the Observable if the Statement holds or is violated.",
+        "false": "The Observable is vague, missing, or not something a test could notice."
+      },
+      "state": {
+        "id": "BR-003",
+        "title": "Admins assign a same-department manager as approver",
+        "statement": "An admin may assign as approver only a manager whose department equals the invoice's department.",
+        "observable": "While logged in as an admin, Assign approver is available on an unpaid invoice; only managers in that invoice's department are selectable; after assignment that manager can complete BR-001. A manager from another department is not listed and cannot be assigned."
+      }
+    },
+    {
+      "id": "rule.observable.BR-004",
+      "type": "noul",
+      "specId": "BR-004",
+      "instructions": "Is Statement observable via Observable?",
+      "criteria": {
+        "true": "A person or automated test could notice the Observable if the Statement holds or is violated.",
+        "false": "The Observable is vague, missing, or not something a test could notice."
+      },
+      "state": {
+        "id": "BR-004",
+        "title": "Managers cannot approve another department's invoices",
+        "statement": "A manager must not approve an invoice whose department is not theirs.",
+        "observable": "On an invoice for another department, Approve is absent or disabled for that manager, and posting an approval is rejected. Invoice status is unchanged."
+      }
+    },
+    {
+      "id": "rule.observable.BR-005",
+      "type": "noul",
+      "specId": "BR-005",
+      "instructions": "Is Statement observable via Observable?",
+      "criteria": {
+        "true": "A person or automated test could notice the Observable if the Statement holds or is violated.",
+        "false": "The Observable is vague, missing, or not something a test could notice."
+      },
+      "state": {
+        "id": "BR-005",
+        "title": "Managers cannot approve unless they are the assigned approver",
+        "statement": "A manager must not approve an invoice for which they are not the assigned approver, including when no approver is assigned.",
+        "observable": "On an unpaid invoice in their department that is unassigned or assigned to someone else, Approve is absent or disabled for that manager, and posting an approval is rejected. Invoice status is unchanged."
+      }
+    },
+    {
+      "id": "usecase.contradicts.UC-001",
+      "type": "noul",
+      "specId": "UC-001",
+      "instructions": "Does this contradict the matrix for its Actor?",
+      "criteria": {
+        "true": "A step or outcome asks the actor to do something the Roles & Permissions matrix denies, or forbids something the matrix allows.",
+        "false": "The use case stays inside the actor's allow/deny cells."
+      },
+      "state": {
+        "id": "UC-001",
+        "title": "Assigned manager approves a department invoice",
+        "actor": "Manager",
+        "preconditions": "The Manager persona (Finance) is logged in. An unpaid Finance invoice exists with this manager as assignedApprover.",
+        "steps": [
+          "Open the unpaid invoices list",
+          "Open the invoice",
+          "Choose Approve"
+        ],
+        "outcome": "Invoice status is Approved.",
+        "actorPermissions": {
+          "view-invoice": "allow",
+          "assign-approver": "deny",
+          "approve-invoice": "allow"
+        }
+      }
+    },
+    {
+      "id": "usecase.contradicts.UC-002",
+      "type": "noul",
+      "specId": "UC-002",
+      "instructions": "Does this contradict the matrix for its Actor?",
+      "criteria": {
+        "true": "A step or outcome asks the actor to do something the Roles & Permissions matrix denies, or forbids something the matrix allows.",
+        "false": "The use case stays inside the actor's allow/deny cells."
+      },
+      "state": {
+        "id": "UC-002",
+        "title": "Viewer tries to approve",
+        "actor": "Viewer",
+        "preconditions": "The viewer is logged in. An unpaid invoice is visible.",
+        "steps": [
+          "Open the unpaid invoices list",
+          "Open the invoice",
+          "Look for Approve"
+        ],
+        "outcome": "Approve is not available. Posting an approval is rejected. Invoice status is unchanged.",
+        "actorPermissions": {
+          "view-invoice": "allow",
+          "assign-approver": "deny",
+          "approve-invoice": "deny"
+        }
+      }
+    },
+    {
+      "id": "usecase.contradicts.UC-003",
+      "type": "noul",
+      "specId": "UC-003",
+      "instructions": "Does this contradict the matrix for its Actor?",
+      "criteria": {
+        "true": "A step or outcome asks the actor to do something the Roles & Permissions matrix denies, or forbids something the matrix allows.",
+        "false": "The use case stays inside the actor's allow/deny cells."
+      },
+      "state": {
+        "id": "UC-003",
+        "title": "Admin assigns a same-department manager",
+        "actor": "Admin",
+        "preconditions": "The admin is logged in. An unpaid Finance invoice has no assignedApprover. A Finance manager and an Operations manager exist.",
+        "steps": [
+          "Open the invoice",
+          "Choose Assign approver",
+          "Select the Finance manager"
+        ],
+        "outcome": "The Finance manager is assignedApprover and can complete UC-001. Operations managers are not selectable and cannot be assigned.",
+        "actorPermissions": {
+          "view-invoice": "allow",
+          "assign-approver": "allow",
+          "approve-invoice": "deny"
+        }
+      }
+    },
+    {
+      "id": "usecase.contradicts.UC-004",
+      "type": "noul",
+      "specId": "UC-004",
+      "instructions": "Does this contradict the matrix for its Actor?",
+      "criteria": {
+        "true": "A step or outcome asks the actor to do something the Roles & Permissions matrix denies, or forbids something the matrix allows.",
+        "false": "The use case stays inside the actor's allow/deny cells."
+      },
+      "state": {
+        "id": "UC-004",
+        "title": "Manager tries to approve another department's invoice",
+        "actor": "Manager",
+        "preconditions": "The Manager persona (Finance) is logged in. An unpaid Operations invoice is visible.",
+        "steps": [
+          "Open the unpaid invoices list",
+          "Open the Operations invoice",
+          "Look for Approve"
+        ],
+        "outcome": "Approve is not available. Posting an approval is rejected. Invoice status is unchanged.",
+        "actorPermissions": {
+          "view-invoice": "allow",
+          "assign-approver": "deny",
+          "approve-invoice": "allow"
+        }
+      }
+    },
+    {
+      "id": "usecase.contradicts.UC-005",
+      "type": "noul",
+      "specId": "UC-005",
+      "instructions": "Does this contradict the matrix for its Actor?",
+      "criteria": {
+        "true": "A step or outcome asks the actor to do something the Roles & Permissions matrix denies, or forbids something the matrix allows.",
+        "false": "The use case stays inside the actor's allow/deny cells."
+      },
+      "state": {
+        "id": "UC-005",
+        "title": "Manager tries to approve when not the assigned approver",
+        "actor": "Manager",
+        "preconditions": "The Manager persona (Finance) is logged in. An unpaid Finance invoice is visible with no assignedApprover.",
+        "steps": [
+          "Open the unpaid invoices list",
+          "Open the invoice",
+          "Look for Approve"
+        ],
+        "outcome": "Approve is not available. Posting an approval is rejected. Invoice status is unchanged.",
+        "actorPermissions": {
+          "view-invoice": "allow",
+          "assign-approver": "deny",
+          "approve-invoice": "allow"
+        }
+      }
+    },
+    {
+      "id": "section.score.business-rules",
+      "type": "score",
+      "section": "Business Rules",
+      "instructions": "How complete is the Business Rules section for a coding agent?",
+      "criteria": [
+        "empty",
+        "partial",
+        "agent-ready"
+      ],
+      "state": {
+        "section": "Business Rules",
+        "body": [
+          {
+            "id": "BR-001",
+            "statement": "A manager may approve an invoice only if they are its assigned approver and the invoice belongs to their department.",
+            "observable": "While logged in as that assigned manager, the Approve control is available on that unpaid invoice, and using it sets status to Approved."
+          },
+          {
+            "id": "BR-002",
+            "statement": "A viewer must not approve an invoice.",
+            "observable": "While logged in as a viewer, the Approve control is absent or disabled, and posting an approval is rejected. Invoice status is unchanged."
+          },
+          {
+            "id": "BR-003",
+            "statement": "An admin may assign as approver only a manager whose department equals the invoice's department.",
+            "observable": "While logged in as an admin, Assign approver is available on an unpaid invoice; only managers in that invoice's department are selectable; after assignment that manager can complete BR-001. A manager from another department is not listed and cannot be assigned."
+          },
+          {
+            "id": "BR-004",
+            "statement": "A manager must not approve an invoice whose department is not theirs.",
+            "observable": "On an invoice for another department, Approve is absent or disabled for that manager, and posting an approval is rejected. Invoice status is unchanged."
+          },
+          {
+            "id": "BR-005",
+            "statement": "A manager must not approve an invoice for which they are not the assigned approver, including when no approver is assigned.",
+            "observable": "On an unpaid invoice in their department that is unassigned or assigned to someone else, Approve is absent or disabled for that manager, and posting an approval is rejected. Invoice status is unchanged."
+          }
+        ]
+      }
+    },
+    {
+      "id": "section.score.use-cases",
+      "type": "score",
+      "section": "Use Cases",
+      "instructions": "How complete is the Use Cases section for a coding agent?",
+      "criteria": [
+        "empty",
+        "partial",
+        "agent-ready"
+      ],
+      "state": {
+        "section": "Use Cases",
+        "body": [
+          {
+            "id": "UC-001",
+            "actor": "Manager",
+            "steps": [
+              "Open the unpaid invoices list",
+              "Open the invoice",
+              "Choose Approve"
+            ],
+            "outcome": "Invoice status is Approved."
+          },
+          {
+            "id": "UC-002",
+            "actor": "Viewer",
+            "steps": [
+              "Open the unpaid invoices list",
+              "Open the invoice",
+              "Look for Approve"
+            ],
+            "outcome": "Approve is not available. Posting an approval is rejected. Invoice status is unchanged."
+          },
+          {
+            "id": "UC-003",
+            "actor": "Admin",
+            "steps": [
+              "Open the invoice",
+              "Choose Assign approver",
+              "Select the Finance manager"
+            ],
+            "outcome": "The Finance manager is assignedApprover and can complete UC-001. Operations managers are not selectable and cannot be assigned."
+          },
+          {
+            "id": "UC-004",
+            "actor": "Manager",
+            "steps": [
+              "Open the unpaid invoices list",
+              "Open the Operations invoice",
+              "Look for Approve"
+            ],
+            "outcome": "Approve is not available. Posting an approval is rejected. Invoice status is unchanged."
+          },
+          {
+            "id": "UC-005",
+            "actor": "Manager",
+            "steps": [
+              "Open the unpaid invoices list",
+              "Open the invoice",
+              "Look for Approve"
+            ],
+            "outcome": "Approve is not available. Posting an approval is rejected. Invoice status is unchanged."
+          }
+        ]
+      }
+    },
+    {
+      "id": "section.score.roles-permissions",
+      "type": "score",
+      "section": "Roles & Permissions",
+      "instructions": "How complete is the Roles & Permissions section for a coding agent?",
+      "criteria": [
+        "empty",
+        "partial",
+        "agent-ready"
+      ],
+      "state": {
+        "section": "Roles & Permissions",
+        "body": {
+          "roles": [
+            "Admin",
+            "Manager",
+            "Viewer"
+          ],
+          "actions": [
+            {
+              "id": "view-invoice",
+              "permissions": {
+                "Admin": "allow",
+                "Manager": "allow",
+                "Viewer": "allow"
+              }
+            },
+            {
+              "id": "assign-approver",
+              "permissions": {
+                "Admin": "allow",
+                "Manager": "deny",
+                "Viewer": "deny"
+              }
+            },
+            {
+              "id": "approve-invoice",
+              "permissions": {
+                "Admin": "deny",
+                "Manager": "allow",
+                "Viewer": "deny"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "pack.next-id",
+      "type": "choice",
+      "instructions": "Which ID should the Requirement Owner improve next?",
+      "criteria": {
+        "BR-001": "Business rule: Assigned manager approves a department invoice",
+        "BR-002": "Business rule: Viewers cannot approve invoices",
+        "BR-003": "Business rule: Admins assign a same-department manager as approver",
+        "BR-004": "Business rule: Managers cannot approve another department's invoices",
+        "BR-005": "Business rule: Managers cannot approve unless they are the assigned approver",
+        "UC-001": "Use case: Assigned manager approves a department invoice",
+        "UC-002": "Use case: Viewer tries to approve",
+        "UC-003": "Use case: Admin assigns a same-department manager",
+        "UC-004": "Use case: Manager tries to approve another department's invoice",
+        "UC-005": "Use case: Manager tries to approve when not the assigned approver"
+      },
+      "state": {
+        "ids": [
+          "BR-001",
+          "BR-002",
+          "BR-003",
+          "BR-004",
+          "BR-005",
+          "UC-001",
+          "UC-002",
+          "UC-003",
+          "UC-004",
+          "UC-005"
+        ],
+        "titles": {
+          "BR-001": "Business rule: Assigned manager approves a department invoice",
+          "BR-002": "Business rule: Viewers cannot approve invoices",
+          "BR-003": "Business rule: Admins assign a same-department manager as approver",
+          "BR-004": "Business rule: Managers cannot approve another department's invoices",
+          "BR-005": "Business rule: Managers cannot approve unless they are the assigned approver",
+          "UC-001": "Use case: Assigned manager approves a department invoice",
+          "UC-002": "Use case: Viewer tries to approve",
+          "UC-003": "Use case: Admin assigns a same-department manager",
+          "UC-004": "Use case: Manager tries to approve another department's invoice",
+          "UC-005": "Use case: Manager tries to approve when not the assigned approver"
+        }
+      }
+    },
+    {
+      "id": "pack.agent-ready",
+      "type": "noul",
+      "instructions": "Is this pack safe to hand to a coding agent?",
+      "criteria": {
+        "true": "Rules are testable, use cases match the matrix, and an agent would not have to invent behavior.",
+        "false": "An agent would have to guess, or the pack still contradicts itself."
+      },
+      "state": {
+        "ruleIds": [
+          "BR-001",
+          "BR-002",
+          "BR-003",
+          "BR-004",
+          "BR-005"
+        ],
+        "useCaseIds": [
+          "UC-001",
+          "UC-002",
+          "UC-003",
+          "UC-004",
+          "UC-005"
+        ],
+        "roles": [
+          "Admin",
+          "Manager",
+          "Viewer"
+        ]
+      }
+    }
+  ]
+}
