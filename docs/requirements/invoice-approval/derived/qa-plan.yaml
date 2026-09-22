@@ -1,0 +1,58 @@
+requirementId: invoice-approval
+specHash: d6765c9de59d318f65d8701410d1af6c29f36b247c114af2bc25bd75dd373689
+cases:
+  - id: UC-001
+    specId: UC-001
+    kind: allow
+    actor: Manager
+    control: Approve
+    preconditions: The Manager persona (Finance) is logged in. An unpaid Finance invoice exists with this manager as assignedApprover.
+    outcome: Invoice status is Approved.
+    steps:
+      - Open the unpaid invoices list
+      - Open the invoice
+      - Choose Approve
+  - id: UC-002
+    specId: UC-002
+    kind: deny
+    actor: Viewer
+    control: Approve
+    preconditions: The viewer is logged in. An unpaid invoice is visible.
+    outcome: Approve is not available. Posting an approval is rejected. Invoice status is unchanged.
+    steps:
+      - Open the unpaid invoices list
+      - Open the invoice
+      - Look for Approve
+  - id: UC-003
+    specId: UC-003
+    kind: allow
+    actor: Admin
+    control: Assign approver
+    preconditions: The admin is logged in. An unpaid Finance invoice has no assignedApprover. A Finance manager and an Operations manager exist.
+    outcome: The Finance manager is assignedApprover and can complete UC-001. Operations managers are not selectable and cannot be assigned.
+    steps:
+      - Open the invoice
+      - Choose Assign approver
+      - Select the Finance manager
+  - id: UC-004
+    specId: UC-004
+    kind: deny
+    actor: Manager
+    control: Approve
+    preconditions: The Manager persona (Finance) is logged in. An unpaid Operations invoice is visible.
+    outcome: Approve is not available. Posting an approval is rejected. Invoice status is unchanged.
+    steps:
+      - Open the unpaid invoices list
+      - Open the Operations invoice
+      - Look for Approve
+  - id: UC-005
+    specId: UC-005
+    kind: deny
+    actor: Manager
+    control: Approve
+    preconditions: The Manager persona (Finance) is logged in. An unpaid Finance invoice is visible with no assignedApprover.
+    outcome: Approve is not available. Posting an approval is rejected. Invoice status is unchanged.
+    steps:
+      - Open the unpaid invoices list
+      - Open the invoice
+      - Look for Approve

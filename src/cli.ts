@@ -7,7 +7,8 @@ import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { isRequirementId } from "./compile.js";
 import { adapterInstructions, ImplementLockedError } from "./implement.js";
-import { checkPack, compilePack, createPack, findRequirementsDir, implementPack, resolvePack } from "./pack.js";
+import { checkPack, compilePack, createPack, findRequirementsDir, implementPack, provePack, resolvePack } from "./pack.js";
+import { ProveLockedError } from "./proof.js";
 import { createAppState, createCockpitServer, refresh } from "./server.js";
 
 loadProjectEnv();
@@ -32,12 +33,12 @@ function loadProjectEnv(): void {
       seen.add(dir);
       try {
         loadEnvFile(path.join(dir, ".env"));
-        return;
       } catch {
-        const parent = path.dirname(dir);
-        if (parent === dir) break;
-        dir = parent;
+        // missing .env is fine; keep walking
       }
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
     }
   }
 }
@@ -96,6 +97,33 @@ async function main(command: string, rest: string[]): Promise<void> {
     return;
   }
 
+  if (command === "prove") {
+    const pack = await resolvePack(cwd);
+    if (!pack) {
+      throw new Error("No requirement pack here. Open a docs/requirements/<id> folder, or create one.");
+    }
+    try {
+      const proved = await provePack(pack, {
+        onProgress: (message, level) => {
+          if (level === "error") console.error(message);
+          else console.log(message);
+        },
+      });
+      console.log(`${proved.message} — Proof ${proved.result.health.proof.state}`);
+      for (const finding of proved.result.health.proof.findings) {
+        console.error(`${finding.severity}: ${finding.message}`);
+      }
+      if (proved.result.health.proof.state === "failed") process.exit(2);
+    } catch (err) {
+      if (err instanceof ProveLockedError) {
+        console.error(err.message);
+        process.exit(2);
+      }
+      throw err;
+    }
+    return;
+  }
+
   if (command === "create") {
     const id = rest[0];
     if (id) {
@@ -119,7 +147,7 @@ async function main(command: string, rest: string[]): Promise<void> {
   }
 
   throw new Error(
-    `Unknown command "${command}". Try: req0 start | req0 create | req0 compile | req0 check | req0 implement`,
+    `Unknown command "${command}". Try: req0 start | req0 create | req0 compile | req0 check | req0 implement | req0 prove`,
   );
 }
 

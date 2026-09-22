@@ -28,6 +28,6 @@ The golden fixture used in tests is [requirements/invoice-approval/](requirement
 
 ## Status
 
-**Shipped:** Milestone 1 (spec pack, compiler, local cockpit), the cockpit design-system restyle, Milestone 2 (personas, `jev-pack.json`, Ready meter, live TypeSafe check), and Milestone 3 (implement brief, Cursor + manual adapters, Implement gated on Ready).
+**Shipped:** Milestone 1 (spec pack, compiler, local cockpit), the cockpit design-system restyle, Milestone 2 (personas, `jev-pack.json`, Ready meter, live TypeSafe check), Milestone 3 (implement brief, Cursor + manual adapters, Implement gated on Ready), and Milestone 4 (runtime fixture, compiled qa-plan, browser proof).
 
-**Not shipped:** Browser proof (M4) and later milestones. Those are specified in the roadmap so we do not invent them ad hoc.
+**Not shipped:** Screenshots (M5), living/stale re-prove (M6), and team/CI (M7). Those stay specified in the roadmap so we do not invent them ad hoc.

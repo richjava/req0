@@ -10,7 +10,7 @@ The compiler in `src/compile.ts` is **strict and deterministic**. It does not us
 docs/requirements/<requirement-id>/
   requirement.md
   fixtures/personas.yaml
-  fixtures/runtime.yaml    # Milestone 4; login and baseUrl
+  fixtures/runtime.yaml    # Milestone 4; required to enable Prove (baseUrl + login)
   context/                 # Milestone 5; screenshots
   derived/                 # generated; do not hand-edit
     spec.json
@@ -20,7 +20,8 @@ docs/requirements/<requirement-id>/
     jev-pack.json          # Milestone 2
     jev-run.json           # cached Jev answers (spec-hash)
     build-run.json         # last implement launch
-    qa-plan.yaml           # Milestone 4
+    qa-plan.yaml           # Milestone 4; compiled from spec.json
+    proof-run.json         # last prove run
 ```
 
 `<requirement-id>` is the folder name: kebab-case `[a-z0-9-]+` (example: `invoice-approval`).
@@ -93,6 +94,23 @@ Action ids: kebab-case or PascalCase (`[A-Za-z][A-Za-z0-9-]*`).
 Valid means the grammar parsed. It does **not** mean the spec is good enough for an agent. That is the Ready meter (Milestone 2).
 
 Personas may be stubbed while Spec is Valid. Ready requires a persona (`email`) per matrix role in `fixtures/personas.yaml`. That check is deterministic and does not call Jev.
+
+## Runtime fixture (Milestone 4)
+
+Prove is blocked without `fixtures/runtime.yaml`. Missing or invalid file fails closed. Schema:
+
+```yaml
+baseUrl: http://127.0.0.1:3000
+startCommand: npm run dev   # optional; product-repo root; skipped if baseUrl already responds
+resetCommand: npm run db:seed  # optional; product-repo root; runs before each case so later allows do not poison deny fixtures
+login:
+  path: /login
+  email: "#email"
+  password: "#password"
+  submit: "button[type=submit]"
+```
+
+`email` / `password` / `submit` are CSS selectors. Credentials come from the Actor’s persona, not this file. `derived/qa-plan.yaml` is compiled from `spec.json` (one case per use case) and is not hand-edited.
 
 ## Golden pack
 

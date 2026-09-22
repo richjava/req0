@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ImplementLockedError } from "./implement.js";
 import { createMockJevClient } from "./jev.js";
-import { checkPack, compilePack, createPack, implementPack, packPaths } from "./pack.js";
+import { checkPack, compilePack, createPack, implementPack, packPaths, provePack } from "./pack.js";
 import { readReq0Config } from "./stack.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -122,6 +122,56 @@ describe("implementPack", () => {
       const run = JSON.parse(await readFile(paths.buildRun, "utf8"));
       expect(run.state).toBe("succeeded");
       expect(run.adapter).toBe("manual");
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("enables Prove after implement when runtime.yaml parses, then records a mock proof", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "req0-prove-ok-"));
+    const root = path.join(parent, "docs/requirements/demo-pack");
+    try {
+      const paths = packPaths(root);
+      await mkdir(path.join(root, "fixtures"), { recursive: true });
+      await writeFile(paths.requirement, READY_MD, "utf8");
+      await writeFile(paths.personas, "personas:\n  Viewer:\n    email: viewer@example.test\n    password: x\n", "utf8");
+      await writeFile(
+        paths.runtime,
+        `baseUrl: http://127.0.0.1:3000
+login:
+  path: /login
+  email: "#email"
+  password: "#password"
+  submit: button
+`,
+        "utf8",
+      );
+      await checkPack(paths, createMockJevClient());
+      const launched = await implementPack(paths, { adapter: "manual" });
+      expect(launched.result.health.nextAction.id).toBe("prove");
+      expect(launched.result.health.nextAction.enabled).toBe(true);
+      expect(launched.result.qaPlan?.cases).toHaveLength(1);
+      const proved = await provePack(paths, {
+        client: createMockJevClient(),
+        waitForUrl: async () => true,
+        driver: {
+          async runCase() {
+            return {
+              url: "http://127.0.0.1:3000/invoices",
+              text: "Invoices are listed",
+              options: [],
+              controlAvailable: false,
+              controlDisabled: false,
+              clicked: false,
+            };
+          },
+        },
+      });
+      expect(proved.result.health.proof.state).toBe("passed");
+      expect(proved.result.health.proof.runtime).toBe(true);
+      const proveLog = await readFile(paths.proveLog, "utf8");
+      expect(proveLog).toMatch(/Checking http:\/\/127.0.0.1:3000/);
+      expect(proveLog).toMatch(/Proof passed/);
     } finally {
       await rm(parent, { recursive: true, force: true });
     }

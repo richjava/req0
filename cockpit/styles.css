@@ -248,7 +248,9 @@ body {
 
 .status-pill[data-state="valid"],
 .status-pill[data-state="ok"],
-.status-pill[data-state="ready"] {
+.status-pill[data-state="ready"],
+.status-pill[data-state="succeeded"],
+.status-pill[data-state="passed"] {
   background: var(--color-status-ok-bg);
   color: var(--color-status-ok);
 }
@@ -259,7 +261,8 @@ body {
 }
 
 .status-pill[data-state="drafting"],
-.status-pill[data-state="empty"] {
+.status-pill[data-state="empty"],
+.status-pill[data-state="stale"] {
   background: var(--color-status-draft-bg);
   color: var(--color-status-draft);
 }
@@ -269,6 +272,7 @@ body {
   color: var(--color-status-idle);
 }
 
+.status-pill[data-state="needs_review"],
 .status-pill[data-state="running"],
 .status-pill[data-state="progress"] {
   background: var(--color-status-progress-bg);
@@ -328,6 +332,28 @@ body {
   flex-direction: column;
   min-height: 0;
   flex: 1;
+}
+
+.activity-panel {
+  flex: 0 0 auto;
+}
+
+.activity-log {
+  max-height: 10.5rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-log .list-row {
+  cursor: default;
+  font-family: var(--font-mono);
+}
+
+.list-row-idle {
+  color: var(--text-muted);
+  cursor: default;
 }
 
 .editor-label {

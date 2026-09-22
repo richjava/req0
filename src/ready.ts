@@ -7,6 +7,7 @@ import type {
   CompileResult,
   Health,
   JevRun,
+  ProofMeter,
   ReadyFinding,
   ReadyMeter,
   SpecAst,
@@ -268,16 +269,15 @@ function scoreboard(health: Health, ready: ReadyMeter): Pick<Health, "nextAction
 
   if (ready.state === "ready") {
     if (health.build.state === "succeeded") {
+      const runtime = health.proof.runtime;
       return {
         nextAction: {
           id: "prove",
           label: "Prove this requirement",
-          enabled: false,
-          hint: "Milestone 4 — browser proof is next. Build Succeeded is not proof the app boots.",
+          enabled: runtime,
+          hint: proofHint(health.proof),
         },
-        howThisIsGoing: health.build.message
-          ? `Ready. ${health.build.message}`
-          : "Ready. Implementation run finished. Proof is next.",
+        howThisIsGoing: proofGoing(health),
       };
     }
     if (health.build.state === "stale") {
@@ -299,7 +299,7 @@ function scoreboard(health: Health, ready: ReadyMeter): Pick<Health, "nextAction
         hint:
           health.build.state === "failed"
             ? health.build.message
-            : "Launches the Cursor adapter, or use req0 implement --adapter=manual.",
+            : "Starts a Cursor agent with derived/implement-brief.md. Use --adapter=manual to skip launch.",
       },
       howThisIsGoing:
         ready.nits > 0
@@ -370,6 +370,35 @@ function nextLine(ready: ReadyMeter): string {
 
 function fmt(noul: number): string {
   return noul.toFixed(2);
+}
+
+function proofHint(proof: ProofMeter): string {
+  if (!proof.runtime) {
+    return "Blocked without fixtures/runtime.yaml (baseUrl and deterministic login).";
+  }
+  if (proof.state === "passed") return "Proof passed. Click to re-run.";
+  if (proof.state === "failed") return proof.message ?? "Proof failed. Click to re-run.";
+  if (proof.state === "needs_review") {
+    return "Proof needs review (noul between 0.15 and 0.75).";
+  }
+  if (proof.state === "stale") return "Spec changed after the last proof run. Re-prove.";
+  return "Runs compiled derived/qa-plan.yaml in a browser. Progress and errors appear in Activity.";
+}
+
+function proofGoing(health: Health): string {
+  const build = health.build.message
+    ? `Ready. ${health.build.message}`
+    : "Ready. Implementation run finished.";
+  if (!health.proof.runtime) {
+    return `${build} Proof needs fixtures/runtime.yaml.`;
+  }
+  if (health.proof.state === "passed") return `${build} Proof passed.`;
+  if (health.proof.state === "failed") {
+    return `${build} Proof failed${health.proof.message ? `: ${health.proof.message}` : "."}`;
+  }
+  if (health.proof.state === "needs_review") return `${build} Proof needs review.`;
+  if (health.proof.state === "stale") return `${build} Proof is stale.`;
+  return `${build} Proof is next.`;
 }
 
 function truncate(text: string, max: number): string {

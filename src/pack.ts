@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, readdir, access } from "node:fs/promises";
+import { mkdir, readFile, writeFile, readdir, access, appendFile } from "node:fs/promises";
 import path from "node:path";
 import { compileMarkdown, healthToStatusMarkdown, isRequirementId } from "./compile.js";
 import { assertImplementAllowed, launchAdapter } from "./implement.js";
@@ -6,13 +6,24 @@ import { emitImplementBrief } from "./implement-brief.js";
 import { hasJevAccess, JevRequestError, JevUnavailableError, resolveJevClient, type JevClient } from "./jev.js";
 import { emitJevPack } from "./jev-pack.js";
 import { parsePersonasYaml, type PersonasResult } from "./personas.js";
+import { emitQaPlan, emitQaPlanYaml } from "./qa-plan.js";
+import {
+  assertProveAllowed,
+  evaluateProof,
+  persistProofRun,
+  provePlan,
+  ProveLockedError,
+  type ProofDriver,
+} from "./proof.js";
 import { applyReadyToHealth, attachReady, evaluateBuild, specHash } from "./ready.js";
+import { parseRuntimeYaml, type RuntimeResult } from "./runtime.js";
 import { DEFAULT_STACK, inspectProductRepo, writeReq0Config } from "./stack.js";
 import { EMPTY_TEMPLATE, PERSONAS_STUB } from "./template.js";
-import type { AdapterId, BuildRun, CompileResult, JevRun, SpecAst } from "./types.js";
+import type { AdapterId, BuildRun, CompileResult, JevRun, ProgressFn, ProofRun, SpecAst } from "./types.js";
 
 export const REQUIREMENT_FILE = "requirement.md";
 export const PERSONAS_FILE = path.join("fixtures", "personas.yaml");
+export const RUNTIME_FILE = path.join("fixtures", "runtime.yaml");
 
 export type PackPaths = {
   id: string;
@@ -27,6 +38,10 @@ export type PackPaths = {
   jevRun: string;
   implementBrief: string;
   buildRun: string;
+  runtime: string;
+  qaPlan: string;
+  proofRun: string;
+  proveLog: string;
 };
 
 export function packPaths(root: string): PackPaths {
@@ -45,6 +60,10 @@ export function packPaths(root: string): PackPaths {
     jevRun: path.join(derived, "jev-run.json"),
     implementBrief: path.join(derived, "implement-brief.md"),
     buildRun: path.join(derived, "build-run.json"),
+    runtime: path.join(root, RUNTIME_FILE),
+    qaPlan: path.join(derived, "qa-plan.yaml"),
+    proofRun: path.join(derived, "proof-run.json"),
+    proveLog: path.join(derived, "prove-run.log"),
   };
 }
 
@@ -150,6 +169,19 @@ export async function compilePack(paths: PackPaths): Promise<CompileResult> {
   });
   const buildRun = await readBuildRun(paths);
   result.health.build = evaluateBuild(result.spec, buildRun);
+  const runtime = await loadRuntime(paths);
+  if (result.spec) {
+    result.qaPlan = emitQaPlan(result.spec);
+  }
+  const proofRun = result.spec ? await readProofRun(paths) : null;
+  result.health.proof = evaluateProof({
+    spec: result.spec,
+    runtime: runtime.ok,
+    run: proofRun,
+  });
+  if (!runtime.ok && !runtime.missing) {
+    result.health.proof.message = runtime.findings[0]?.message;
+  }
   result.health = applyReadyToHealth(result.health, result.health.ready);
   await persistDerived(paths, result);
   return result;
@@ -193,6 +225,9 @@ export async function persistDerived(paths: PackPaths, result: CompileResult): P
   }
   if (result.implementBrief) {
     await writeFile(paths.implementBrief, result.implementBrief, "utf8");
+  }
+  if (result.qaPlan) {
+    await writeFile(paths.qaPlan, emitQaPlanYaml(result.qaPlan), "utf8");
   }
   await writeFile(paths.health, `${JSON.stringify(result.health, null, 2)}\n`, "utf8");
   await writeFile(paths.status, healthToStatusMarkdown(result.health), "utf8");
@@ -250,7 +285,7 @@ export async function implementPack(
   if (repo.root) {
     await writeReq0Config(repo.root, { adapter, stack });
   }
-  const launch = await launchAdapter(adapter, repo.root);
+  const launch = await launchAdapter(adapter, repo.root, paths.implementBrief);
   const run: BuildRun = {
     specHash: compiled.spec ? specHash(compiled.spec) : "",
     state: launch.ok ? "succeeded" : "failed",
@@ -267,4 +302,76 @@ export async function writeRequirement(paths: PackPaths, markdown: string): Prom
   await mkdir(paths.root, { recursive: true });
   await writeFile(paths.requirement, markdown, "utf8");
   return compilePack(paths);
+}
+
+export async function loadRuntime(paths: PackPaths): Promise<RuntimeResult> {
+  try {
+    const text = await readFile(paths.runtime, "utf8");
+    if (!text.trim()) return { ok: false, missing: true };
+    return parseRuntimeYaml(text);
+  } catch {
+    return { ok: false, missing: true };
+  }
+}
+
+async function readProofRun(paths: PackPaths): Promise<ProofRun | null> {
+  try {
+    const raw = JSON.parse(await readFile(paths.proofRun, "utf8")) as ProofRun;
+    if (!raw.specHash || !Array.isArray(raw.cases) || !raw.boot) return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+export async function provePack(
+  paths: PackPaths,
+  deps: {
+    driver?: ProofDriver;
+    client?: JevClient;
+    waitForUrl?: (url: string) => Promise<boolean>;
+    onProgress?: ProgressFn;
+  } = {},
+): Promise<{ result: CompileResult; message: string }> {
+  const compiled = await compilePack(paths);
+  assertProveAllowed(compiled);
+  const runtime = await loadRuntime(paths);
+  if (!runtime.ok || !compiled.spec || !compiled.qaPlan) {
+    throw new ProveLockedError(
+      "Prove is locked without fixtures/runtime.yaml (baseUrl and deterministic login).",
+    );
+  }
+  await mkdir(paths.derived, { recursive: true });
+  await writeFile(paths.proveLog, "");
+  let writing = Promise.resolve();
+  const onProgress: ProgressFn = (message, level = "info") => {
+    const line = `${new Date().toISOString()} ${level} ${message}\n`;
+    writing = writing.then(() => appendFile(paths.proveLog, line)).catch(() => {});
+    deps.onProgress?.(message, level);
+  };
+  const personas = await loadPersonas(paths);
+  const repo = await inspectProductRepo(paths.root);
+  const run = await provePlan(
+    {
+      spec: compiled.spec,
+      plan: compiled.qaPlan,
+      runtime: runtime.runtime,
+      personas,
+      productRoot: repo.root,
+    },
+    { ...deps, onProgress },
+  );
+  await persistProofRun(paths, run);
+  const result = await compilePack(paths);
+  const failed = run.cases.filter((item) => item.verdict === "fail").length;
+  const review = run.cases.filter((item) => item.verdict === "review").length;
+  const message = !run.boot.ok
+    ? (run.boot.message ?? "Proof boot failed.")
+    : failed
+      ? `Proof failed (${failed} case${failed === 1 ? "" : "s"}).`
+      : review
+        ? `Proof needs review (${review} case${review === 1 ? "" : "s"}).`
+        : `Proof passed (${run.cases.length} case${run.cases.length === 1 ? "" : "s"}).`;
+  onProgress(message, !run.boot.ok || failed ? "error" : review ? "info" : "ok");
+  return { result, message };
 }

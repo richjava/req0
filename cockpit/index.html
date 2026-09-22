@@ -9,7 +9,15 @@
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
@@ -63,6 +71,11 @@
           <button type="button" class="btn-secondary" id="create-new">Create pack</button>
           <p class="hint" id="create-error"></p>
         </div>
+
+        <section class="panel activity-panel" id="activity-panel" aria-label="Activity">
+          <p class="editor-label">Activity</p>
+          <ol id="activity" class="list-rows activity-log"></ol>
+        </section>
 
         <section class="panel" id="workspace">
           <label class="editor-label" for="editor">requirement.md</label>

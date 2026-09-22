@@ -471,7 +471,7 @@ export function buildHealth(
     spec: { state: specState, findings },
     ready: emptyReady(specState === "valid" ? "unchecked" : "spec_invalid"),
     build: { state: "not_yet" },
-    proof: { state: "not_yet" },
+    proof: { state: "not_yet", runtime: false, findings: [] },
     nextAction,
     howThisIsGoing,
   };
@@ -490,7 +490,7 @@ export function healthToStatusMarkdown(health: Health): string {
     `- Spec: ${health.spec.state}`,
     `- Ready: ${health.ready.state}${health.ready.reason ? ` (${health.ready.reason})` : ""}`,
     `- Build: ${health.build.state}`,
-    `- Proof: ${health.proof.state}`,
+    `- Proof: ${health.proof.state}${health.proof.runtime ? "" : " (no runtime)"}`,
     `- Next: ${health.nextAction.label}${health.nextAction.enabled ? "" : " (not yet)"}`,
   ];
   if (health.ready.blockers || health.ready.nits) {
@@ -505,6 +505,12 @@ export function healthToStatusMarkdown(health: Health): string {
   if (health.ready.findings.length) {
     lines.push("", "## Ready");
     for (const f of health.ready.findings) {
+      lines.push(`- ${f.severity}: ${f.message}`);
+    }
+  }
+  if (health.proof.findings.length) {
+    lines.push("", "## Proof");
+    for (const f of health.proof.findings) {
       lines.push(`- ${f.severity}: ${f.message}`);
     }
   }

@@ -16,6 +16,7 @@ const els = {
   createNew: document.getElementById("create-new"),
   createError: document.getElementById("create-error"),
   workspace: document.getElementById("workspace"),
+  activity: document.getElementById("activity"),
 };
 
 let state = null;
@@ -23,10 +24,13 @@ let saveTimer;
 let applying = false;
 let focusedSection = "Business Rules";
 let actionNotice = "";
+let actionBusy = false;
+let activityLines = [];
 
 async function load() {
   const res = await fetch("/api/state");
   state = await res.json();
+  if (Array.isArray(state.activity)) activityLines = state.activity;
   render();
 }
 
@@ -55,7 +59,8 @@ function render() {
   }
 
   renderSections(state.markdown ?? "");
-  renderFindings(health?.spec.findings ?? [], health?.ready?.findings ?? []);
+  renderFindings(health?.spec.findings ?? [], health?.ready?.findings ?? [], health?.proof?.findings ?? []);
+  renderActivity();
 }
 
 function setMeter(name, value) {
@@ -102,9 +107,9 @@ function jumpToSpecId(id) {
   return false;
 }
 
-function renderFindings(specFindings, readyFindings) {
+function renderFindings(specFindings, readyFindings, proofFindings = []) {
   els.findings.innerHTML = "";
-  if (!specFindings.length && !readyFindings.length) {
+  if (!specFindings.length && !readyFindings.length && !proofFindings.length) {
     const li = document.createElement("li");
     li.className = "list-row list-row-ok";
     li.textContent = "No findings.";
@@ -128,6 +133,38 @@ function renderFindings(specFindings, readyFindings) {
     });
     els.findings.append(li);
   }
+  for (const f of proofFindings) {
+    const li = document.createElement("li");
+    li.className = f.severity === "fail" ? "list-row list-row-bad" : "list-row list-row-nit";
+    li.textContent = f.specId ? `${f.specId} — ${f.message}` : f.message;
+    li.addEventListener("click", () => jumpToSpecId(f.specId));
+    els.findings.append(li);
+  }
+}
+
+function renderActivity() {
+  if (!els.activity) return;
+  els.activity.innerHTML = "";
+  const lines = activityLines.length
+    ? activityLines
+    : [{ level: "info", message: "No activity yet. Prove writes progress and errors here." }];
+  for (const line of lines) {
+    const li = document.createElement("li");
+    const kind = line.level === "error" ? "bad" : line.level === "ok" ? "ok" : "idle";
+    li.className = `list-row list-row-${kind}`;
+    li.textContent = line.message;
+    els.activity.append(li);
+  }
+  els.activity.scrollTop = els.activity.scrollHeight;
+}
+
+function appendActivity(line) {
+  activityLines = [...activityLines, line].slice(-80);
+  if (line.message) {
+    actionNotice = line.message;
+    els.hint.textContent = line.message;
+  }
+  renderActivity();
 }
 
 function jumpToLine(line) {
@@ -203,24 +240,119 @@ els.next.addEventListener("click", async () => {
   }
   if (id === "implement") {
     await runNextAction("Launching…", "/api/implement", { adapter: "cursor" });
+    return;
+  }
+  if (id === "prove") {
+    activityLines = [{ level: "info", message: "Prove started." }];
+    actionNotice = "Prove started.";
+    setMeter("proof", "running");
+    renderActivity();
+    els.hint.textContent = actionNotice;
+    await runProveAction();
   }
 });
 
+async function runProveAction() {
+  actionBusy = true;
+  els.next.disabled = true;
+  els.next.textContent = "Proving…";
+  const poll = window.setInterval(() => {
+    void refreshActivity();
+  }, 750);
+  try {
+    const res = await fetch("/api/prove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const payload = await res.json();
+    if (Array.isArray(payload.activity) && payload.activity.length) {
+      activityLines = payload.activity;
+      renderActivity();
+    }
+    if (!res.ok && !payload.started) {
+      actionNotice = payload.error ?? "Prove failed.";
+      els.hint.textContent = actionNotice;
+      return;
+    }
+    await waitWhileBusy("prove");
+    await load();
+  } catch (err) {
+    actionNotice = err instanceof Error ? err.message : "Failed to fetch";
+    els.hint.textContent = actionNotice;
+    await refreshActivity();
+    await waitWhileBusy("prove");
+    await load();
+  } finally {
+    window.clearInterval(poll);
+    actionBusy = false;
+    render();
+  }
+}
+
+async function waitWhileBusy(kind) {
+  const deadline = Date.now() + 10 * 60 * 1000;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch("/api/state");
+      const data = await res.json();
+      if (Array.isArray(data.activity)) {
+        activityLines = data.activity;
+        const last = activityLines[activityLines.length - 1];
+        if (last?.message) {
+          actionNotice = last.message;
+          els.hint.textContent = last.message;
+        }
+        renderActivity();
+      }
+      if (data.health || data.packId) state = { ...state, ...data };
+      if (data.busy !== kind) return;
+    } catch {
+      // keep polling through a brief disconnect
+    }
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+}
+
+async function refreshActivity() {
+  try {
+    const res = await fetch("/api/state");
+    const data = await res.json();
+    if (!Array.isArray(data.activity)) return;
+    activityLines = data.activity;
+    const last = activityLines[activityLines.length - 1];
+    if (last?.message) {
+      actionNotice = last.message;
+      els.hint.textContent = last.message;
+    }
+    renderActivity();
+  } catch {
+    // keep the last lines if the poll loses a race with Prove
+  }
+}
+
 async function runNextAction(busyLabel, url, body) {
+  actionBusy = true;
   els.next.disabled = true;
   els.next.textContent = busyLabel;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body ?? {}),
-  });
-  const payload = await res.json();
-  if (payload.health || payload.packId) state = { ...state, ...payload };
-  if (!res.ok || payload.error) {
-    actionNotice = payload.error ?? "Request failed.";
-  } else if (payload.message) {
-    actionNotice = payload.message;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+    const payload = await res.json();
+    if (payload.health || payload.packId) state = { ...state, ...payload };
+    if (Array.isArray(payload.activity)) activityLines = payload.activity;
+    if (!res.ok || payload.error) {
+      actionNotice = payload.error ?? "Request failed.";
+    } else if (payload.message) {
+      actionNotice = payload.message;
+    }
+  } catch (err) {
+    actionNotice = err instanceof Error ? err.message : "Request failed.";
   }
+  actionBusy = false;
   render();
 }
 
@@ -242,9 +374,33 @@ els.createNew.addEventListener("click", async () => {
   jumpToSection("Business Rules");
 });
 
-const events = new EventSource("/api/events");
-events.addEventListener("message", () => {
-  if (!applying) void load();
-});
+let events = null;
+
+function connectEvents() {
+  if (events) events.close();
+  events = new EventSource("/api/events");
+  events.addEventListener("message", (ev) => {
+    if (!ev.data || ev.data === ":") return;
+    if (ev.data === "reload") {
+      if (!applying && !actionBusy) void load();
+      return;
+    }
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === "activity") appendActivity(msg);
+      if (msg.type === "done") void refreshActivity();
+    } catch {
+      if (!applying && !actionBusy) void load();
+    }
+  });
+}
+
+function disconnectEvents() {
+  events?.close();
+  events = null;
+}
+
+window.addEventListener("pagehide", disconnectEvents);
+window.addEventListener("pageshow", () => connectEvents());
 
 void load();

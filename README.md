@@ -1,6 +1,6 @@
 # Req0
 
-A requirement operating system: structured packs, a local Requirement Owner cockpit, and (later) Jev judgments plus coding-agent implementation and browser proof.
+A requirement operating system: structured packs, a local Requirement Owner cockpit, Jev judgments, coding-agent implementation, and browser proof.
 
 **Documentation:** [docs/README.md](docs/README.md) — product guides live there. `docs/requirements/` is only for requirement packs (including the golden `invoice-approval` fixture).
 
@@ -22,4 +22,6 @@ npx tsx src/cli.ts create my-requirement
 
 Required sections in a pack’s `requirement.md`: Business Rules, Use Cases, Roles & Permissions. See [docs/grammar.md](docs/grammar.md).
 
-Jev coaching needs `TYPESAFE_API_KEY` (see `.env.example`). Without a key, Ready stays Not yet. Persona blockers still apply. A valid compile writes `derived/implement-brief.md`. `req0 implement` launches only after Ready is Ready.
+Jev coaching needs `TYPESAFE_API_KEY` (see `.env.example`). Without a key, Ready stays Not yet. Persona blockers still apply. A valid compile writes `derived/implement-brief.md`. `req0 implement` starts a Cursor agent with that brief after Ready (`cursor agent login` first). `--adapter=manual` skips launch.
+
+`req0 prove` (and the cockpit **Prove this requirement** button) runs after Build succeeded when `fixtures/runtime.yaml` is present. Deny cases are deterministic UI checks; allow cases ask Jev whether the page matches the Outcome. Chromium: `npx playwright install chromium`.

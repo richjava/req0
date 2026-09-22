@@ -9,7 +9,7 @@ Req0 is a **requirement operating system** that lives in a product git repo. A p
 3. A deterministic compiler writes `derived/spec.json`, `derived/health.json`, `derived/status.md`, and (when valid) `derived/jev-pack.json` and `derived/implement-brief.md`.
 4. `req0 start` opens a local [cockpit](cockpit.md) so the owner can see health and the next action.
 
-Jev (TypeSafe System One) judges a frozen catalog when you set `TYPESAFE_API_KEY` and run **Check this spec with Jev**. Implement launches only after Ready is Ready. Browser QA is **not** run yet.
+Jev (TypeSafe System One) judges a frozen catalog when you set `TYPESAFE_API_KEY` and run **Check this spec with Jev**. Implement launches only after Ready is Ready. **Prove this requirement** runs compiled `qa-plan.yaml` against `fixtures/runtime.yaml` after Build succeeded.
 
 ## What it does not do
 
@@ -26,6 +26,7 @@ Jev (TypeSafe System One) judges a frozen catalog when you set `TYPESAFE_API_KEY
 | `derived/spec.json` | Compiler AST; later stages consume this, not raw prose |
 | `derived/health.json` | Scoreboard the cockpit and git share |
 | `fixtures/personas.yaml` | Test users per role (stub allowed until Ready/QA) |
+| `fixtures/runtime.yaml` | Where the app is and how to log in (required to enable Prove) |
 
 If the markdown cannot be compiled, nothing downstream should guess. Invalid specs fail with a line number.
 

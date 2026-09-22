@@ -5,9 +5,9 @@ Milestones 1–4 are the first shippable loop (specify → build → prove). Mil
 | Milestone | Name | Status |
 | --- | --- | --- |
 | 1 | The pack exists | **Shipped** (plus design-system restyle) |
-| 2 | Jev coaches the spec | **Shipped** (live TypeSafe check; invoice-approval is honestly blocked) |
-| 3 | Coding agent builds from the pack | **Shipped** (launch gated on Ready; Prove stays disabled) |
-| 4 | Proof against the same words | Specified, not built |
+| 2 | Jev coaches the spec | **Shipped** (live TypeSafe check; nits do not block Ready) |
+| 3 | Coding agent builds from the pack | **Shipped** (launch gated on Ready; Build Succeeded ≠ app boots) |
+| 4 | Proof against the same words | **Shipped** (runtime gate; compiled qa-plan; deny is deterministic) |
 | 5 | Visual and extra intent | Specified, not built |
 | 6 | Living requirements | Specified, not built |
 | 7 | Operate as a team | Specified, not built |
@@ -40,13 +40,46 @@ No API key (`TYPESAFE_API_KEY`) → Ready stays **Not yet**. Persona blockers st
 
 Portable `implement-brief.md`. Adapters: **Cursor launch** and **generic manual** only. Empty repo = no customer app at repo root (Req0’s own `package.json` does not count). Stack recorded in `req0.json` when Implement actually runs. Build Succeeded ≠ app boots.
 
-Implement stays **locked until Ready is Ready**. When Ready, `req0 implement` and the cockpit next action launch the Cursor adapter (or `--adapter=manual`). Empty repo records the default stack in `req0.json`. Build Succeeded is not proof the app boots; Prove stays disabled until Milestone 4.
+Implement stays **locked until Ready is Ready**. When Ready, `req0 implement` and the cockpit **Implement** button start a Cursor agent in the product repo, with `derived/implement-brief.md` in the prompt. `--adapter=manual` only records the run. Empty repo records the default stack in `req0.json`. Build Succeeded is not proof the app boots.
 
-**Shipped:** emit `derived/implement-brief.md` on a valid compile, empty-vs-existing product-repo detection, Cursor + manual adapters, `derived/build-run.json`, Implement enabled only after Ready.
+**Shipped:** emit `derived/implement-brief.md` on a valid compile, empty-vs-existing product-repo detection, Cursor agent launch + manual skip, `derived/build-run.json`, Implement enabled only after Ready.
 
 ## Milestone 4 — Proof
 
-Blocked without `fixtures/runtime.yaml` (`baseUrl`, optional `startCommand`, deterministic login). Runner executes compiled `qa-plan.yaml` only. Deny prefers deterministic UI checks. Confidence: noul ≥ 0.75 pass, ≤ 0.15 fail, else needs review.
+Work lives in the **Req0** repo. The app under test is the **product repo** (for the golden loop: invoice-desk). `baseUrl` in `fixtures/runtime.yaml` points at that app. Do not scaffold a second customer app.
+
+### Gate
+
+Prove stays **disabled** until Ready is Ready, Build is succeeded, and `fixtures/runtime.yaml` parses. Missing or invalid runtime fails closed: Proof stays **Not yet**, next action is still Prove, button off. Hint names the file. Personas stay in `fixtures/personas.yaml`; runtime does not duplicate passwords.
+
+### `fixtures/runtime.yaml`
+
+Required:
+
+```yaml
+baseUrl: http://127.0.0.1:3000
+login:
+  path: /login
+  email: "#email"
+  password: "#password"
+  submit: "button[type=submit]"
+```
+
+Optional `startCommand` runs in the product-repo root only if `baseUrl` does not already respond. Optional `resetCommand` runs in the product-repo root before each case so later allows (approve/assign) do not poison deny fixtures. Login is deterministic: the runner fills those selectors with the persona for the case’s Actor. No Jev during login.
+
+### Compiled plan
+
+A valid spec always writes `derived/qa-plan.yaml` from `spec.json` only — one case per use case, never from ad-hoc tests. `kind` is `deny` when a step is `Look for …` or the outcome says the control is not available / absent or disabled / status unchanged; otherwise `allow`. `control` is the `Choose` / `Look for` label. The runner executes that file only.
+
+### Runner
+
+- **Deny:** log in, follow Open/Choose/Select steps, then assert `control` is absent or disabled. No Jev. Do not invent HTTP posts; the UI check is the deny proof.
+- **Allow:** log in, follow steps, click `control`. Jev noul: does the page observation match the Outcome? Catalog `m4-proof-v1`.
+- Confidence (same gates as Ready): noul ≥ **0.75** pass, ≤ **0.15** fail, else **needs review**. Deterministic deny is pass or fail only.
+- Proof meter: `not_yet` / `passed` / `failed` / `needs_review` / `stale` (spec hash changed after the last run). Re-prove is allowed.
+- Playwright drives Chromium. Jev is the existing TypeSafe client. This is not an npm dependency on `jev-browser`.
+
+**Shipped:** runtime parser, qa-plan emitter, `req0 prove` + cockpit Prove, `derived/proof-run.json`, Proof meter.
 
 ## Later
 
@@ -63,3 +96,13 @@ Blocked without `fixtures/runtime.yaml` (`baseUrl`, optional `startCommand`, det
 ## Alignment
 
 After each milestone: what shipped vs acceptance, any drift, any fence that should change. Improvements are explicit doc edits, not silent scope.
+
+### Milestone 3
+
+Shipped vs acceptance: implement brief, Ready gate, Cursor + manual adapters, `build-run.json`, `req0.json` stack. Fence held: Build Succeeded is not proof the app boots.
+
+Drift (fixed here): architecture still listed Jev and coding agents as unbuilt. Roadmap M2 still said invoice-approval is honestly blocked; a live product pack can be Ready with nits. The golden pack in this repo stays Not yet without `TYPESAFE_API_KEY` — that is a key, not a spec failure. Health files are not copied between Req0 and the product repo.
+
+### Milestone 4
+
+Shipped vs acceptance: runtime gate, compiled qa-plan, deterministic deny, Jev noul on allow, Proof meter, cockpit/CLI Prove. Fence held: no screenshot vision (M5), no per-cell stale re-prove (M6), no second customer app, no `jev-browser` package.

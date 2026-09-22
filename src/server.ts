@@ -3,10 +3,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasJevAccess, JevRequestError, JevUnavailableError } from "./jev.js";
-import { implementPack, checkPack, compilePack, createPack, findRequirementsDir, listPacks, writeRequirement } from "./pack.js";
+import { implementPack, checkPack, compilePack, createPack, findRequirementsDir, listPacks, provePack, writeRequirement } from "./pack.js";
 import { inspectProductRepo } from "./stack.js";
 import type { PackPaths } from "./pack.js";
-import type { CompileResult } from "./types.js";
+import type { ActivityLevel, ActivityLine, CompileResult } from "./types.js";
 
 const cockpitDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../cockpit");
 
@@ -17,10 +17,12 @@ export type AppState = {
   pack: PackPaths | null;
   last: CompileResult | null;
   clients: Set<SseClient>;
+  activity: ActivityLine[];
+  busy: "prove" | null;
 };
 
 export function createAppState(cwd: string, pack: PackPaths | null): AppState {
-  return { cwd, pack, last: null, clients: new Set() };
+  return { cwd, pack, last: null, clients: new Set(), activity: [], busy: null };
 }
 
 export async function refresh(state: AppState): Promise<CompileResult | null> {
@@ -45,9 +47,12 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
     if (req.method === "GET" && url.pathname === "/api/events") {
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
+        "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
       });
+      res.socket?.setNoDelay(true);
+      res.write("retry: 2000\n\n");
       res.write(":\n\n");
       state.clients.add(res);
       req.on("close", () => state.clients.delete(res));
@@ -156,6 +161,25 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/prove") {
+      if (!state.pack) {
+        sendJson(res, { error: "No pack selected." }, 400);
+        return;
+      }
+      if (state.busy === "prove") {
+        await sendJson(res, { ...(await snapshot(state)), started: true, message: "Prove is already running." });
+        return;
+      }
+      const pack = state.pack;
+      state.busy = "prove";
+      state.activity = [];
+      pushActivity(state, "Prove started.");
+      await yieldEventLoop();
+      await sendJson(res, { ...(await snapshot(state)), started: true, message: "Prove started." });
+      void runProve(state, pack);
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/create-in-place") {
       if (!state.pack) {
         sendJson(res, { error: "No pack folder selected." }, 400);
@@ -200,13 +224,49 @@ async function snapshot(state: AppState) {
     spec: state.last?.spec ?? null,
     hasApiKey: hasJevAccess(),
     productRepo: state.pack ? await inspectProductRepo(state.pack.root) : null,
+    activity: state.activity,
+    busy: state.busy,
   };
 }
 
+async function runProve(state: AppState, pack: PackPaths): Promise<void> {
+  try {
+    const proved = await provePack(pack, {
+      onProgress: (message, level) => pushActivity(state, message, level),
+    });
+    state.last = proved.result;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Prove failed.";
+    pushActivity(state, message, "error");
+    if (err instanceof JevUnavailableError && state.pack) {
+      state.last = await compilePack(state.pack);
+    }
+  } finally {
+    state.busy = null;
+    broadcastEvent(state, { type: "done", action: "prove" });
+    broadcast(state);
+  }
+}
+
+function pushActivity(state: AppState, message: string, level: ActivityLevel = "info"): void {
+  const line: ActivityLine = { at: new Date().toISOString(), level, message };
+  state.activity = [...state.activity, line].slice(-80);
+  broadcastEvent(state, { type: "activity", ...line });
+}
+
+async function yieldEventLoop(): Promise<void> {
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
 function broadcast(state: AppState): void {
-  const payload = `data: reload\n\n`;
+  broadcastEvent(state, "reload");
+}
+
+function broadcastEvent(state: AppState, payload: unknown): void {
+  const data = typeof payload === "string" ? payload : JSON.stringify(payload);
+  const frame = `data: ${data}\n\n`;
   for (const client of state.clients) {
-    client.write(payload);
+    client.write(frame);
   }
 }
 

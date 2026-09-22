@@ -34,7 +34,7 @@ Health is also a file: `derived/health.json` and `derived/status.md`. Git, CI (l
 4. Compiler (or later Jev / agent / browser) updates health.
 5. The next action changes. The RO does not memorize CLI flags.
 
-After Spec Valid, the next action is **Check this spec with Jev**. Without `TYPESAFE_API_KEY` the click fails closed: Ready stays **Not yet**, and TypeSafe errors surface as a 502 with the server message (no secrets). A matrix role without a persona is a Ready blocker immediately. Blockers sort first; the next action is **Improve** the Jev next-id when one is named. After a passing Jev run, next action becomes **Implement this requirement** and is enabled. Prove stays disabled.
+After Spec Valid, the next action is **Check this spec with Jev**. Without `TYPESAFE_API_KEY` the click fails closed: Ready stays **Not yet**, and TypeSafe errors surface as a 502 with the server message (no secrets). A matrix role without a persona is a Ready blocker immediately. Blockers sort first; the next action is **Improve** the Jev next-id when one is named. After a passing Jev run, next action becomes **Implement this requirement** and is enabled: it starts a Cursor agent with the implement brief. After Build succeeded, next action is **Prove this requirement**. It stays disabled until `fixtures/runtime.yaml` parses; then it runs compiled `derived/qa-plan.yaml` in a browser.
 
 ## Editing
 

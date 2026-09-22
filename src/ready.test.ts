@@ -157,7 +157,7 @@ function baseHealth(build: Health["build"] = { state: "not_yet" }): Health {
     spec: { state: "valid", findings: [] },
     ready: { state: "not_yet", reason: "unchecked", blockers: 0, nits: 0, findings: [] },
     build,
-    proof: { state: "not_yet" },
+    proof: { state: "not_yet", runtime: false, findings: [] },
     nextAction: { id: "check-jev", label: "Check this spec with Jev", enabled: true },
     howThisIsGoing: "",
   };
@@ -203,6 +203,15 @@ describe("scoreboard", () => {
     const after = applyReadyToHealth(baseHealth({ state: "succeeded", adapter: "manual" }), ready);
     expect(after.nextAction.id).toBe("prove");
     expect(after.nextAction.enabled).toBe(false);
+    const withRuntime = applyReadyToHealth(
+      {
+        ...baseHealth({ state: "succeeded", adapter: "manual" }),
+        proof: { state: "not_yet", runtime: true, findings: [] },
+      },
+      ready,
+    );
+    expect(withRuntime.nextAction.id).toBe("prove");
+    expect(withRuntime.nextAction.enabled).toBe(true);
   });
 });
 

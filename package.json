@@ -2,7 +2,7 @@
   "name": "req0",
   "version": "0.1.0",
   "private": true,
-  "description": "Req0 — requirement operating system: a spec pack, a cockpit, and later Jev-backed proof.",
+  "description": "Req0 — requirement operating system: a spec pack, a cockpit, Jev, coding-agent implement, and browser proof.",
   "type": "module",
   "bin": {
     "req0": "./dist/cli.js"
@@ -22,5 +22,8 @@
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "playwright": "^1.63.0"
   }
 }

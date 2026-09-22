@@ -122,7 +122,7 @@ export type JevQuestion = {
 
 export type JevPack = {
   requirementId: string;
-  catalog: "m2-authoring-v1";
+  catalog: "m2-authoring-v1" | "m4-proof-v1";
   questions: JevQuestion[];
 };
 
@@ -177,6 +177,53 @@ export type BuildRun = {
   message?: string;
 };
 
+export type ProofState = "not_yet" | "passed" | "failed" | "needs_review" | "stale";
+
+export type ProofFinding = {
+  id: string;
+  specId: string;
+  severity: "fail" | "review";
+  message: string;
+  noul?: number;
+};
+
+export type ProofMeter = {
+  state: ProofState;
+  runtime: boolean;
+  message?: string;
+  passed?: number;
+  failed?: number;
+  review?: number;
+  findings: ProofFinding[];
+};
+
+export type ProofVerdict = "pass" | "fail" | "review";
+
+export type ProofCaseResult = {
+  id: string;
+  kind: "allow" | "deny";
+  verdict: ProofVerdict;
+  noul?: number;
+  message: string;
+};
+
+export type ProofRun = {
+  specHash: string;
+  checkedAt: string;
+  boot: { ok: boolean; message?: string };
+  cases: ProofCaseResult[];
+};
+
+export type ActivityLevel = "info" | "ok" | "error";
+
+export type ActivityLine = {
+  at: string;
+  level: ActivityLevel;
+  message: string;
+};
+
+export type ProgressFn = (message: string, level?: ActivityLevel) => void;
+
 export type Health = {
   requirementId: string;
   spec: {
@@ -185,7 +232,7 @@ export type Health = {
   };
   ready: ReadyMeter;
   build: BuildMeter;
-  proof: { state: "not_yet" };
+  proof: ProofMeter;
   nextAction: NextAction;
   howThisIsGoing: string;
 };
@@ -196,4 +243,24 @@ export type CompileResult = {
   markdown: string;
   jevPack?: JevPack;
   implementBrief?: string;
+  qaPlan?: QaPlan;
+};
+
+export type QaCaseKind = "allow" | "deny";
+
+export type QaCase = {
+  id: string;
+  specId: string;
+  kind: QaCaseKind;
+  actor: string;
+  control: string | null;
+  steps: string[];
+  preconditions: string;
+  outcome: string;
+};
+
+export type QaPlan = {
+  requirementId: string;
+  specHash: string;
+  cases: QaCase[];
 };

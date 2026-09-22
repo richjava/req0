@@ -10,7 +10,7 @@
 | **Spec Valid** | Grammar compiled with no errors. Not the same as “ready for an agent.” |
 | **Ready** | Quality gate. Blocked by missing personas, untestable rules, matrix contradictions, or pack noul below **0.75**. No API key → Not yet. |
 | **Build** | Coding-agent run finished (Milestone 3). Not “the app boots.” Stale if the spec changes after a run. |
-| **Proof** | Browser QA against the pack (Milestone 4). |
+| **Proof** | Browser QA against the compiled qa-plan (Milestone 4). States: Not yet / Passed / Failed / Needs review / Stale. |
 | **Observable** | On a business rule: what a person or test could notice. |
 | **Persona** | Test user for a matrix role. Never a production account. |
 | **Coding-agent adapter** | Thin launcher around a portable implement brief. Cursor is the first adapter, not the product. |
