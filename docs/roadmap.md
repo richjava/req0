@@ -74,7 +74,7 @@ A valid spec always writes `derived/qa-plan.yaml` from `spec.json` only — one 
 ### Runner
 
 - **Deny:** log in, follow Open/Choose/Select steps, then assert `control` is absent or disabled. No Jev. Do not invent HTTP posts; the UI check is the deny proof.
-- **Allow:** log in, follow steps, click `control`. Jev noul: does the page observation match the Outcome? Catalog `m4-proof-v1`.
+- **Allow:** log in, follow steps, click `control`. Jev noul: does the page observation match the Outcome? Catalog `m4-proof-v1`. Instructions are pack-agnostic (url / text / options / visible controls). Open picks a visible name from the step and preconditions — not product paths.
 - Confidence (same gates as Ready): noul ≥ **0.75** pass, ≤ **0.15** fail, else **needs review**. Deterministic deny is pass or fail only.
 - Proof meter: `not_yet` / `passed` / `failed` / `needs_review` / `stale` (spec hash changed after the last run). Re-prove is allowed.
 - Playwright drives Chromium. Jev is the existing TypeSafe client. This is not an npm dependency on `jev-browser`.

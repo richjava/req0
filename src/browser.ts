@@ -78,9 +78,12 @@ export async function createPlaywrightDriver(onProgress?: ProgressFn): Promise<P
 
         let clicked = false;
         if (qa.kind === "allow" && control && controlAvailable && !controlDisabled) {
+          const before = ((await page.locator("body").innerText().catch(() => "")) ?? "")
+            .replace(/\s+/g, " ")
+            .trim();
           await control.first().click();
           clicked = true;
-          await settleAfterAllow(page, qa);
+          await settleAfterAllow(page, qa, before);
         }
 
         const seen = await observe(page, qa.control);
@@ -199,25 +202,27 @@ async function fillControlled(locator: import("playwright").Locator, value: stri
 async function settleAfterAllow(
   page: import("playwright").Page,
   qa: QaCase,
+  beforeText: string,
 ): Promise<void> {
-  const pending = page.getByRole("button", { name: /^(Approving|Assigning)/i });
-  await pending.waitFor({ state: "visible", timeout: 2_000 }).catch(() => {});
-  await pending.waitFor({ state: "hidden", timeout: 10_000 }).catch(() => {});
-  if (/approve/i.test(qa.control ?? "")) {
-    await page.getByText("Approved", { exact: true }).waitFor({ timeout: 8_000 }).catch(() => {});
+  const pendingName = controlPendingName(qa.control);
+  if (pendingName) {
+    const pending = page.getByRole("button", { name: new RegExp(`^${escapeRegExp(pendingName)}`, "i") });
+    await pending.waitFor({ state: "visible", timeout: 2_000 }).catch(() => {});
+    await pending.waitFor({ state: "hidden", timeout: 10_000 }).catch(() => {});
   }
-  if (/assign/i.test(qa.control ?? "")) {
-    await page
-      .waitForFunction(
-        `() => {
-          const t = document.body.innerText.replace(/\\s+/g, " ");
-          return /Assigned approver/i.test(t) && !/Assigned approver None/i.test(t);
-        }`,
-        undefined,
-        { timeout: 8_000 },
-      )
-      .catch(() => {});
+  const before = beforeText.replace(/\s+/g, " ").trim();
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const now = ((await page.locator("body").innerText().catch(() => "")) ?? "").replace(/\s+/g, " ").trim();
+    if (now && now !== before) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
+}
+
+export function controlPendingName(control: string | null): string | null {
+  const verb = control?.trim().split(/\s+/)[0];
+  if (!verb) return null;
+  return `${verb.replace(/e$/i, "")}ing`;
 }
 
 async function readSelectOptions(
@@ -283,71 +288,156 @@ async function openTarget(
   step: string,
   preconditions: string,
 ): Promise<boolean> {
-  await page
-    .getByRole("link")
-    .filter({ hasText: /INV-/i })
-    .first()
-    .waitFor({ state: "visible", timeout: 8_000 })
-    .catch(() => {});
-  const hay = `${step}\n${preconditions}`.toLowerCase();
+  await page.waitForLoadState("domcontentloaded", { timeout: 15_000 }).catch(() => {});
+  await page.getByRole("link").first().waitFor({ state: "visible", timeout: 8_000 }).catch(() => {});
   const links = page.getByRole("link");
   const count = await links.count();
   const candidates: { index: number; name: string }[] = [];
   for (let i = 0; i < count; i++) {
     const name = ((await links.nth(i).innerText()) ?? "").replace(/\s+/g, " ").trim();
     if (!name) continue;
-    if (/unpaid invoices/i.test(name) && /list/i.test(step)) {
+    if (/sign out/i.test(name)) continue;
+    if (/\blist\b/i.test(step) && linkMatchesOpen(name, step)) {
       await links.nth(i).click();
       await page.waitForLoadState("domcontentloaded", { timeout: 15_000 });
       return true;
     }
-    if (/^←/.test(name) || /sign out/i.test(name)) continue;
+    if (/^←/.test(name)) continue;
     candidates.push({ index: i, name });
   }
 
-  if (/list/i.test(step) && !/invoice\b/i.test(step.replace(/unpaid invoices list/i, ""))) {
-    return true;
-  }
+  if (/\blist\b/i.test(step)) return true;
 
-  const pick = pickInvoice(candidates, hay);
+  const pick = pickOpenTarget(candidates, step, preconditions);
   if (!pick) return candidates.length === 0;
+  const beforeUrl = page.url();
   const href = (await links.nth(pick.index).getAttribute("href")) ?? "";
   await links.nth(pick.index).click();
-  if (href.includes("/invoices/")) {
-    await page.waitForURL((url) => String(url).includes(href) || /\/invoices\/[^/]+/.test(new URL(String(url)).pathname), {
-      timeout: 15_000,
-    });
+  const hrefPath = href.replace(/^https?:\/\/[^/]+/i, "").split("#")[0] ?? "";
+  if (hrefPath && hrefPath !== "/" && hrefPath !== "#") {
+    await page
+      .waitForURL((url) => {
+        const now = String(url);
+        if (now === beforeUrl) return false;
+        return now.includes(hrefPath) || new URL(now).pathname.includes(hrefPath);
+      }, { timeout: 15_000 })
+      .catch(() => {});
   } else {
     await page.waitForLoadState("domcontentloaded", { timeout: 15_000 });
   }
   return true;
 }
 
-export function pickInvoice(
+function linkMatchesOpen(name: string, step: string): boolean {
+  const wanted = tokenize(step.replace(/\blist\b/i, ""));
+  if (wanted.length === 0) return /\blist\b/i.test(name);
+  const have = new Set(tokenize(name));
+  return wanted.every((token) => have.has(token) || name.toLowerCase().includes(token));
+}
+
+const STOP = new Set([
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "to",
+  "of",
+  "in",
+  "on",
+  "for",
+  "is",
+  "are",
+  "be",
+  "been",
+  "being",
+  "this",
+  "that",
+  "with",
+  "as",
+  "their",
+  "them",
+  "they",
+  "it",
+  "its",
+  "at",
+  "by",
+  "from",
+  "exists",
+  "exist",
+  "visible",
+  "logged",
+  "login",
+  "persona",
+  "open",
+  "choose",
+  "look",
+  "select",
+  "has",
+  "have",
+  "had",
+  "can",
+  "may",
+  "must",
+  "admin",
+  "viewer",
+]);
+
+function tokenize(value: string): string[] {
+  return value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length >= 2 && !STOP.has(word));
+}
+
+function clausesWithHead(preconditions: string, head: string | undefined): string[] {
+  if (!head) return [];
+  const singular = head.endsWith("s") ? head.slice(0, -1) : head;
+  const plural = head.endsWith("s") ? head : `${head}s`;
+  return preconditions.split(/(?<=[.!?])\s+/).filter((clause) => {
+    const tokens = tokenize(clause);
+    return tokens.includes(head) || tokens.includes(singular) || tokens.includes(plural);
+  });
+}
+
+export function pickOpenTarget(
   candidates: { index: number; name: string }[],
-  hay: string,
+  step: string,
+  preconditions: string,
 ): { index: number; name: string } | undefined {
-  const items = candidates.map((item) => ({ ...item, text: item.name.toLowerCase() }));
-  const invoices = items.filter((item) => /inv-/.test(item.text));
-  // "Operations manager" in preconditions is not "Open the Operations invoice".
-  if (/operations invoice|open the operations\b/.test(hay)) {
-    return invoices.find((item) => /inv-ops|operations/.test(item.text)) ?? invoices[0];
-  }
-  if (/unassigned|no assignedapprover|no approver assigned|with no assigned/.test(hay)) {
-    const unassigned = invoices.filter((item) => /no approver/.test(item.text));
-    if (/finance/.test(hay)) {
-      return unassigned.find((item) => /finance|inv-fin/.test(item.text)) ?? unassigned[0] ?? invoices[0];
+  if (/\blist\b/i.test(step)) return undefined;
+  const stepPhrase = step.replace(/^open\s+/i, "").replace(/^the\s+/i, "").trim();
+  const stepTokens = tokenize(stepPhrase);
+  const head = stepTokens.at(-1);
+  const stepModifiers = stepTokens.slice(0, -1);
+  const relevant = clausesWithHead(preconditions, head).join(" ");
+  const relevantLower = relevant.toLowerCase();
+  const wantNegation = /\bno\b|\bnone\b|\bwithout\b|\bunassigned\b|\bnot\b/.test(relevantLower);
+  const wantAssigned = !wantNegation && /assigned/.test(relevantLower);
+  const preTokens = tokenize(relevant);
+
+  let best: { item: { index: number; name: string }; score: number } | undefined;
+  for (const item of candidates) {
+    const text = item.name.toLowerCase();
+    const tokens = new Set(tokenize(item.name));
+    if (stepModifiers.some((modifier) => !text.includes(modifier) && !tokens.has(modifier))) {
+      continue;
     }
-    return unassigned[0] ?? invoices[0];
-  }
-  if (/assignedapprover|assigned approver|as assigned/.test(hay)) {
-    const assigned = invoices.filter((item) => /approver:/.test(item.text) && !/no approver/.test(item.text));
-    if (/finance/.test(hay)) {
-      return assigned.find((item) => /finance|inv-fin/.test(item.text)) ?? assigned[0];
+    let score = 0;
+    for (const modifier of stepModifiers) {
+      if (text.includes(modifier) || tokens.has(modifier)) score += 20;
     }
-    return assigned[0];
+    for (const token of preTokens) {
+      if (token === head) continue;
+      if (text.includes(token) || tokens.has(token)) score += 3;
+    }
+    const itemNegation = /\bno\b|\bnone\b|\bwithout\b|\bunassigned\b/.test(text);
+    if (wantNegation) score += itemNegation ? 15 : -15;
+    if (wantAssigned) score += itemNegation ? -15 : 8;
+    if (!best || score > best.score) best = { item, score };
   }
-  return invoices[0] ?? items.find((item) => /invoice/.test(item.text));
+  return best?.item ?? candidates[0];
 }
 
 async function observe(

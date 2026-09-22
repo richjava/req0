@@ -69,6 +69,7 @@ Outcome: Invoice status is Approved.
 - `Id` must match `UC-NNN`.
 - `Actor` must be a column in the roles matrix.
 - Numbered `Steps` required. `Alternate paths` is optional.
+- Frozen step verbs: `Open …`, `Choose …`, `Look for …`, `Select …`. Prove matches Open against visible link names using the step plus preconditions. It does not hard-code product paths or record ids.
 
 ## Roles and permissions
 

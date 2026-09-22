@@ -15,6 +15,7 @@ The golden fixture used in tests is [requirements/invoice-approval/](requirement
 - [Stakeholders and the Requirement Owner](stakeholders.md) — who uses it and how roles map
 - [Roadmap](roadmap.md) — milestones, current status, fences
 - [Glossary](glossary.md) — shared language
+- [Case study: Invoice Desk](case-study-invoice-desk.md) — how each use case in the first product was proven (deny vs Jev, exact payload)
 
 ## For people writing requirements
 

@@ -293,7 +293,7 @@ async function judgeCase(
           instructions:
             "Does this page observation match the Outcome? Score only clauses that url, text, and options can confirm or contradict. Clauses about later use cases do not lower the score when the visible clauses match.",
           criteria: {
-            true: "Every Outcome clause this page can show is true (status, assignedApprover, who is listed in options, visible controls).",
+            true: "Every Outcome clause this page can show is true (status, who is assigned or selected, who is listed in options, visible controls).",
             false: "A checkable Outcome clause is missing or contradicted, or this is the wrong page.",
           },
           state: {
