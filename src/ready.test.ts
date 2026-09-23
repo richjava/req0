@@ -212,6 +212,20 @@ describe("scoreboard", () => {
     );
     expect(withRuntime.nextAction.id).toBe("prove");
     expect(withRuntime.nextAction.enabled).toBe(true);
+    expect(withRuntime.howThisIsGoing).toBe("");
+    const proved = applyReadyToHealth(
+      {
+        ...baseHealth({
+          state: "succeeded",
+          adapter: "cursor",
+          message:
+            "Started a Cursor agent with the implement brief. Watch the product repo for new files. Build Succeeded is not proof the app boots.",
+        }),
+        proof: { state: "passed", runtime: true, findings: [] },
+      },
+      ready,
+    );
+    expect(proved.howThisIsGoing).toBe("");
   });
 });
 

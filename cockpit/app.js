@@ -39,6 +39,7 @@ function render() {
   const packId = state.packId;
   els.title.textContent = packId ? packId.replaceAll("-", " ") : "No requirement selected";
   els.going.textContent = health?.howThisIsGoing ?? "Create a requirement pack to begin.";
+  els.going.hidden = !els.going.textContent.trim();
 
   setMeter("spec", health?.spec.state ?? "empty");
   setMeter("ready", health?.ready.state ?? "not_yet");

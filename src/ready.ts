@@ -386,19 +386,13 @@ function proofHint(proof: ProofMeter): string {
 }
 
 function proofGoing(health: Health): string {
-  const build = health.build.message
-    ? `Ready. ${health.build.message}`
-    : "Ready. Implementation run finished.";
-  if (!health.proof.runtime) {
-    return `${build} Proof needs fixtures/runtime.yaml.`;
-  }
-  if (health.proof.state === "passed") return `${build} Proof passed.`;
+  if (!health.proof.runtime) return "Proof needs fixtures/runtime.yaml.";
   if (health.proof.state === "failed") {
-    return `${build} Proof failed${health.proof.message ? `: ${health.proof.message}` : "."}`;
+    return health.proof.message ? `Proof failed: ${health.proof.message}` : "Proof failed.";
   }
-  if (health.proof.state === "needs_review") return `${build} Proof needs review.`;
-  if (health.proof.state === "stale") return `${build} Proof is stale.`;
-  return `${build} Proof is next.`;
+  if (health.proof.state === "needs_review") return "Proof needs review.";
+  if (health.proof.state === "stale") return "Proof is stale.";
+  return "";
 }
 
 function truncate(text: string, max: number): string {
