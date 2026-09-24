@@ -102,6 +102,23 @@ describe("evaluateProof", () => {
     expect(proof.runtime).toBe(true);
   });
 
+  it("marks a buildAt mismatch stale", () => {
+    const proof = evaluateProof({
+      spec,
+      runtime: true,
+      buildAt: "2026-02-01T00:00:00.000Z",
+      run: {
+        specHash: specHash(spec),
+        checkedAt: "2026-01-01T00:00:00.000Z",
+        buildAt: "2026-01-01T00:00:00.000Z",
+        boot: { ok: true },
+        cases: [],
+      },
+    });
+    expect(proof.state).toBe("stale");
+    expect(proof.message).toMatch(/Build changed/);
+  });
+
   it("fails when boot fails", () => {
     const proof = evaluateProof({
       spec,
@@ -127,6 +144,7 @@ describe("provePlan", () => {
         runtime,
         personas,
         productRoot: "/tmp",
+        buildAt: "2026-03-01T00:00:00.000Z",
       },
       {
         waitForUrl: async () => true,
@@ -156,6 +174,7 @@ describe("provePlan", () => {
       },
     );
     expect(run.boot.ok).toBe(true);
+    expect(run.buildAt).toBe("2026-03-01T00:00:00.000Z");
     expect(run.cases).toHaveLength(2);
     expect(run.cases[0]?.verdict).toBe("pass");
     expect(run.cases[1]?.verdict).toBe("pass");

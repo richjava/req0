@@ -16,7 +16,7 @@ Later / on **Check with Jev** / **Prove**:
 ```text
 jev-pack.json  -->  TypeSafe POST /v1/systemone  -->  Ready findings
 spec.json      -->  implement-brief              -->  coding-agent adapter
-qa-plan.yaml   -->  Playwright + Jev noul        -->  Proof meter
+qa-plan.yaml   -->  Playwright + Jev noul        -->  Proof meter + proof-report.md
 ```
 
 ## Commands
@@ -27,8 +27,8 @@ qa-plan.yaml   -->  Playwright + Jev noul        -->  Proof meter
 | `req0 compile` | Headless compile; exit 2 on grammar errors |
 | `req0 create [id]` | Write template + personas stub |
 | `req0 check` | Run Jev on the frozen catalog. Exit 3 if no API key; exit 2 if Ready is blocked |
-| `req0 implement` | Ready gate (exit 2). On Ready, starts a Cursor agent with the implement brief. `--adapter=manual` skips launch |
-| `req0 prove` | Build + `fixtures/runtime.yaml` gate (exit 2). Runs compiled `derived/qa-plan.yaml` in a browser |
+| `req0 implement` | Ready gate (exit 2). On Ready, starts a Cursor agent with the implement brief. `--adapter=manual` skips launch. Off when `req0.json` has `"implement": false` |
+| `req0 prove` | Ready + `fixtures/runtime.yaml` gate (exit 2). Also needs Build succeeded unless implement is off. Runs compiled `derived/qa-plan.yaml` in a browser |
 
 Pack resolution: current directory if it is `docs/requirements/<id>`, else the only pack under `docs/requirements/`, else the cockpit can create one.
 
@@ -39,7 +39,7 @@ Pack resolution: current directory if it is `docs/requirements/<id>`, else the o
 - Pack I/O: [src/pack.ts](../src/pack.ts)
 - HTTP: [src/server.ts](../src/server.ts), CLI: [src/cli.ts](../src/cli.ts)
 
-Compile never calls a model. It writes `derived/jev-pack.json`, `derived/implement-brief.md`, and `derived/qa-plan.yaml` when the spec is valid, and applies persona blockers plus any cached `jev-run.json` and `proof-run.json`. `req0 check` and `POST /api/check-jev` call Jev; TypeSafe failures return a `JevRequestError` (cockpit 502) without dumping secrets. `req0 implement` and `POST /api/implement` launch an adapter only when Ready is Ready. `req0 prove` and `POST /api/prove` run the qa-plan when Build succeeded and runtime.yaml parses. Tests: `npm test` (Vitest), including the golden pack and mock Jev / mock browser drivers.
+Compile never calls a model. It writes `derived/jev-pack.json`, `derived/implement-brief.md`, and `derived/qa-plan.yaml` when the spec is valid, and applies persona blockers plus any cached `jev-run.json` and `proof-run.json`. `req0 check` and `POST /api/check-jev` call Jev; TypeSafe failures return a `JevRequestError` (cockpit 502) without dumping secrets. `req0 implement` and `POST /api/implement` launch an adapter only when Ready is Ready and `req0.json` does not set `"implement": false`. `req0 prove` and `POST /api/prove` run the qa-plan when Ready, runtime.yaml parses, and either Build succeeded or implement is off, then write `derived/proof-run.json` and `derived/proof-report.md`. Tests: `npm test` (Vitest), including the golden pack and mock Jev / mock browser drivers.
 
 Jev client: [src/jev.ts](../src/jev.ts). Live calls are `POST https://api.typesafe.ai/v1/systemone` with `Authorization: Bearer $TYPESAFE_API_KEY`. Catalog emitter: [src/jev-pack.ts](../src/jev-pack.ts). Ready gate: [src/ready.ts](../src/ready.ts), thresholds in [src/gates.ts](../src/gates.ts).
 

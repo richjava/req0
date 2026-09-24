@@ -12,12 +12,26 @@ export class ImplementLockedError extends Error {
   }
 }
 
+export class ImplementDisabledError extends Error {
+  readonly code = "implement_off";
+
+  constructor(
+    message = "Implement is off in req0.json. Build this repo another way, then Prove with fixtures/runtime.yaml.",
+  ) {
+    super(message);
+    this.name = "ImplementDisabledError";
+  }
+}
+
 export type LaunchAdapterDeps = {
   spawn?: typeof spawn;
   resolveBin?: () => string | null;
   agentStatus?: (bin: string) => string;
   settleMs?: number;
   platform?: NodeJS.Platform;
+  prompt?: string;
+  successMessage?: string;
+  openIde?: boolean;
 };
 
 export function adapterInstructions(adapter: AdapterId, briefPath: string): string {
@@ -37,6 +51,17 @@ export function implementPrompt(briefPath: string): string {
   ].join(" ");
 }
 
+export function improvePrompt(briefPath: string): string {
+  return [
+    "Improve this requirement pack from the brief.",
+    `Read ${briefPath} and requirement.md.`,
+    "Patch requirement.md only. If the brief asks for a persona, you may also edit fixtures/personas.yaml.",
+    "Outcome is what a person sees. Do not paste matrix allow/deny cells into Outcome. Look for is deny; Choose is allow.",
+    "Do not invent spec IDs. Do not implement the product app.",
+    "Stop after the patch so the owner can review the diff, then Check with Jev.",
+  ].join(" ");
+}
+
 export function resolveCursorBin(): string | null {
   const override = process.env.CURSOR_BIN?.trim();
   if (override && existsSync(override)) return override;
@@ -52,7 +77,7 @@ export function resolveCursorBin(): string | null {
 }
 
 export function cursorAgentStatus(bin: string): string {
-  const result = spawnSync(bin, ["agent", "status"], { encoding: "utf8", timeout: 20_000 });
+  const result = spawnSync(bin, ["agent", "status"], { encoding: "utf8", timeout: 4_000 });
   return `${result.stdout ?? ""}${result.stderr ?? ""}`;
 }
 
@@ -72,6 +97,7 @@ export function launchAdapter(
     return Promise.resolve({
       ok: true,
       message:
+        deps.successMessage ??
         "Manual adapter does not start an agent. Open the brief, or run implement without --adapter=manual to launch Cursor. Build Succeeded is not proof the app boots.",
     });
   }
@@ -89,8 +115,8 @@ export function launchAdapter(
         "Cursor was not found. Install Cursor, or set CURSOR_BIN, or retry with --adapter=manual.",
     });
   }
-  if (!process.env.CURSOR_API_KEY) {
-    const status = (deps.agentStatus ?? cursorAgentStatus)(bin);
+  if (!process.env.CURSOR_API_KEY && deps.agentStatus) {
+    const status = deps.agentStatus(bin);
     if (/not logged in/i.test(status)) {
       return Promise.resolve({
         ok: false,
@@ -112,15 +138,17 @@ async function spawnCursorAgent(
 ): Promise<{ ok: boolean; message: string }> {
   const platform = deps.platform ?? process.platform;
   const ide =
-    platform === "darwin"
-      ? launchDetached(run, "open", ["-a", "Cursor", repoRoot], repoRoot)
-      : launchDetached(run, bin, [repoRoot], repoRoot);
+    deps.openIde === false
+      ? Promise.resolve({ ok: true, message: "skipped" })
+      : platform === "darwin"
+        ? launchDetached(run, "open", ["-a", "Cursor", repoRoot], repoRoot)
+        : launchDetached(run, bin, [repoRoot], repoRoot);
 
   const logPath = path.join(path.dirname(briefPath), "implement-agent.log");
   const agent = launchDetached(
     run,
     bin,
-    agentArgs(repoRoot, briefPath),
+    agentArgs(repoRoot, briefPath, deps),
     repoRoot,
     logPath,
   );
@@ -136,12 +164,14 @@ async function spawnCursorAgent(
   return {
     ok: true,
     message:
+      deps.successMessage ??
       "Started a Cursor agent with the implement brief. Watch the product repo for new files. Build Succeeded is not proof the app boots.",
   };
 }
 
-function agentArgs(repoRoot: string, briefPath: string): string[] {
-  const args = ["agent", "--workspace", repoRoot, "--trust", "--force", "--print", implementPrompt(briefPath)];
+function agentArgs(repoRoot: string, briefPath: string, deps: LaunchAdapterDeps): string[] {
+  const prompt = deps.prompt ?? implementPrompt(briefPath);
+  const args = ["agent", "--workspace", repoRoot, "--trust", "--force", "--print", prompt];
   const key = process.env.CURSOR_API_KEY?.trim();
   if (key) args.splice(1, 0, "--api-key", key);
   return args;

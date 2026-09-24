@@ -24,7 +24,7 @@ No ticket archaeology. A portable `derived/implement-brief.md` briefs whichever 
 
 ### QA Analyst
 
-Stops rewriting the spec as a separate test suite. Proof runs from the same pack (personas, use cases, matrix, runtime). Failures cite `UC-` IDs.
+Stops rewriting the spec as a separate test suite. Proof runs from the same pack (personas, use cases, matrix, runtime). Failures cite `UC-` IDs. The last run is `derived/proof-report.md`.
 
 ## What we will not do
 

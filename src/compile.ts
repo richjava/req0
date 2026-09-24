@@ -1,4 +1,5 @@
 import { emptyReady } from "./ready.js";
+import { emptyStages } from "./stages.js";
 import {
   OPTIONAL_H2,
   REQUIRED_H2,
@@ -473,6 +474,7 @@ export function buildHealth(
     build: { state: "not_yet" },
     proof: { state: "not_yet", runtime: false, findings: [] },
     nextAction,
+    stages: emptyStages(),
     howThisIsGoing,
   };
 }
@@ -488,8 +490,12 @@ export function healthToStatusMarkdown(health: Health): string {
     health.howThisIsGoing,
     "",
     `- Spec: ${health.spec.state}`,
-    `- Ready: ${health.ready.state}${health.ready.reason ? ` (${health.ready.reason})` : ""}`,
-    `- Build: ${health.build.state}`,
+    `- Ready: ${health.ready.state}${health.ready.reason ? ` (${health.ready.reason})` : ""}${
+      health.ready.jevCurrent && typeof health.ready.packNoul === "number"
+        ? ` · ${health.ready.packNoul.toFixed(2)}`
+        : ""
+    }`,
+    `- Build: ${health.build.owned === false ? "external" : health.build.state}`,
     `- Proof: ${health.proof.state}${health.proof.runtime ? "" : " (no runtime)"}`,
     `- Next: ${health.nextAction.label}${health.nextAction.enabled ? "" : " (not yet)"}`,
   ];

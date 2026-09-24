@@ -6,4 +6,4 @@ The pack is valid. Ready stays Not yet until a TypeSafe API key is set. Persona 
 - Ready: not_yet (no_api_key)
 - Build: not_yet
 - Proof: not_yet (no runtime)
-- Next: Check this spec with Jev
+- Next: Check

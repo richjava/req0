@@ -4,6 +4,7 @@ import {
   adapterInstructions,
   assertImplementAllowed,
   implementPrompt,
+  improvePrompt,
   ImplementLockedError,
   launchAdapter,
 } from "./implement.js";
@@ -66,6 +67,7 @@ describe("implement lock", () => {
 
   it("puts the brief path in the Cursor agent prompt", () => {
     expect(implementPrompt("/repo/derived/implement-brief.md")).toContain("/repo/derived/implement-brief.md");
+    expect(improvePrompt("/repo/derived/improve-brief.md")).toContain("/repo/derived/improve-brief.md");
   });
 
   it("cursor adapter opens the repo and starts an agent with the brief", async () => {
@@ -88,6 +90,21 @@ describe("implement lock", () => {
       "--force",
     ]);
     expect(calls[1]?.at(-1)).toContain("implement-brief.md");
+  });
+
+  it("can start the agent without opening the IDE", async () => {
+    const calls: string[][] = [];
+    const launched = await launchAdapter("cursor", "/tmp/invoice-desk", "/tmp/invoice-desk/derived/improve-brief.md", {
+      spawn: fakeSpawn(calls),
+      resolveBin: () => "/fake/cursor",
+      settleMs: 0,
+      platform: "darwin",
+      openIde: false,
+      prompt: improvePrompt("/tmp/invoice-desk/derived/improve-brief.md"),
+    });
+    expect(launched.ok).toBe(true);
+    expect(calls[0]?.slice(0, 3)).toEqual(["/fake/cursor", "agent", "--workspace"]);
+    expect(calls.some((call) => call[0] === "open")).toBe(false);
   });
 
   it("refuses Cursor launch when the agent is not logged in", async () => {

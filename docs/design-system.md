@@ -54,6 +54,7 @@ Space: `--space-1` … `--space-6` (4px grid). Radius: 8px controls, 12px panels
 | `.panel` | `--surface-2` card |
 | `.list-row` | Findings / later task-like rows |
 | `.input` / `.textarea` | `--surface-3` fields; editor uses `--font-mono` |
+| `.review-diff` / `.review-file` / `.diff-add` / `.diff-del` | Improve patch review; add/del use status ok/bad surfaces |
 
 ## Viewport
 

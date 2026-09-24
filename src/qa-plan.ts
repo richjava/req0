@@ -22,6 +22,8 @@ export function emitQaPlan(spec: SpecAst): QaPlan {
 
 export function caseKind(useCase: UseCase): QaCaseKind {
   if (useCase.steps.some((step) => /^look for\b/i.test(step))) return "deny";
+  // Choose is allow. After-success wording like "absent or disabled" is the new state, not a deny.
+  if (useCase.steps.some((step) => /^choose\b/i.test(step))) return "allow";
   if (/\b(not available|absent or disabled|is unchanged)\b/i.test(useCase.outcome)) {
     return "deny";
   }

@@ -58,4 +58,43 @@ describe("emitQaPlan", () => {
       }),
     ).toBe("Assign approver");
   });
+
+  it("keeps Choose as allow when the Outcome is the after-success hide", () => {
+    expect(
+      caseKind({
+        id: "UC-001",
+        title: "t",
+        actor: "Manager",
+        preconditions: "p",
+        steps: ["Open the invoice", "Choose Approve"],
+        outcome: "The Status label shows Approved. The Approve button is absent or disabled.",
+        line: 1,
+      }),
+    ).toBe("allow");
+    expect(
+      caseKind({
+        id: "UC-003",
+        title: "t",
+        actor: "Admin",
+        preconditions: "p",
+        steps: ["Select the Finance manager", "Choose Assign approver"],
+        outcome: "The Assigned approver label shows the Finance manager. The Approve button is absent or disabled.",
+        line: 1,
+      }),
+    ).toBe("allow");
+  });
+
+  it("still uses the Outcome as deny when there is no Choose or Look for", () => {
+    expect(
+      caseKind({
+        id: "UC-009",
+        title: "t",
+        actor: "Viewer",
+        preconditions: "p",
+        steps: ["Open the invoice"],
+        outcome: "Invoice status is unchanged.",
+        line: 1,
+      }),
+    ).toBe("deny");
+  });
 });

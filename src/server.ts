@@ -1,28 +1,34 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasJevAccess, JevRequestError, JevUnavailableError } from "./jev.js";
-import { implementPack, checkPack, compilePack, createPack, findRequirementsDir, listPacks, provePack, writeRequirement } from "./pack.js";
+import { implementPack, launchImprove, writeImproveBrief, checkPack, compilePack, createPack, findRequirementsDir, listPacks, provePack, writeRequirement } from "./pack.js";
+import { ImproveLockedError } from "./improve.js";
+import {
+  acceptImproveReview,
+  applyImproveReviewGate,
+  evaluateImproveReview,
+  ImproveLintError,
+  ImproveReviewPendingError,
+  rejectImproveReview,
+} from "./improve-review.js";
 import { inspectProductRepo } from "./stack.js";
 import type { PackPaths } from "./pack.js";
 import type { ActivityLevel, ActivityLine, CompileResult } from "./types.js";
 
 const cockpitDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../cockpit");
 
-type SseClient = ServerResponse;
-
 export type AppState = {
   cwd: string;
   pack: PackPaths | null;
   last: CompileResult | null;
-  clients: Set<SseClient>;
   activity: ActivityLine[];
-  busy: "prove" | null;
+  busy: "prove" | "improve" | null;
 };
 
 export function createAppState(cwd: string, pack: PackPaths | null): AppState {
-  return { cwd, pack, last: null, clients: new Set(), activity: [], busy: null };
+  return { cwd, pack, last: null, activity: [], busy: null };
 }
 
 export async function refresh(state: AppState): Promise<CompileResult | null> {
@@ -31,7 +37,6 @@ export async function refresh(state: AppState): Promise<CompileResult | null> {
     return null;
   }
   state.last = await compilePack(state.pack);
-  broadcast(state);
   return state.last;
 }
 
@@ -44,18 +49,17 @@ export function createCockpitServer(state: AppState) {
 async function handle(state: AppState, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   try {
-    if (req.method === "GET" && url.pathname === "/api/events") {
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
+    if (url.pathname === "/api/events") {
+      // Retired. A hanging EventSource pins Chrome/Electron refresh forever.
+      // Finish immediately so leftover clients cannot stall a reload.
+      const body = "Gone. The cockpit polls GET /api/state.\n";
+      res.writeHead(410, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+        Connection: "close",
+        "Content-Length": Buffer.byteLength(body),
       });
-      res.socket?.setNoDelay(true);
-      res.write("retry: 2000\n\n");
-      res.write(":\n\n");
-      state.clients.add(res);
-      req.on("close", () => state.clients.delete(res));
+      res.end(body);
       return;
     }
 
@@ -106,8 +110,19 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
       }
       const body = await readJson(req);
       const markdown = String(body["markdown"] ?? "");
-      state.last = await writeRequirement(state.pack, markdown);
-      broadcast(state);
+      try {
+        state.last = await writeRequirement(state.pack, markdown);
+      } catch (err) {
+        sendJson(
+          res,
+          {
+            ...(await snapshot(state)),
+            error: err instanceof Error ? err.message : "Could not save.",
+          },
+          err instanceof ImproveReviewPendingError ? 409 : 500,
+        );
+        return;
+      }
       await sendJson(res, await snapshot(state));
       return;
     }
@@ -131,8 +146,71 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
         }
         throw err;
       }
-      broadcast(state);
       await sendJson(res, await snapshot(state));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/improve") {
+      if (!state.pack) {
+        sendJson(res, { error: "No pack selected." }, 400);
+        return;
+      }
+      if (state.busy) {
+        await sendJson(res, {
+          ...(await snapshot(state)),
+          started: true,
+          message: state.busy === "improve" ? "Improve is already running." : "Another action is already running.",
+        });
+        return;
+      }
+      const body = await readJson(req);
+      const adapter = body["adapter"] === "manual" ? "manual" : "cursor";
+      try {
+        const written = await writeImproveBrief(state.pack, state.last);
+        state.last = written.result;
+      } catch (err) {
+        sendJson(
+          res,
+          {
+            ...(await snapshot(state)),
+            error: err instanceof Error ? err.message : "Improve failed.",
+          },
+          err instanceof ImproveLockedError || err instanceof ImproveReviewPendingError ? 409 : 500,
+        );
+        return;
+      }
+      const pack = state.pack;
+      state.busy = "improve";
+      state.activity = [];
+      pushActivity(state, "Wrote derived/improve-brief.md.");
+      if (adapter === "manual") {
+        pushActivity(state, "Manual adapter: open the brief in any coding agent.", "ok");
+        state.busy = null;
+        await sendJson(res, {
+          ...(await snapshot(state)),
+          started: false,
+          message: "Wrote derived/improve-brief.md. Open it in any coding agent.",
+        });
+        return;
+      }
+      pushActivity(state, "Launching Cursor to patch requirement.md…");
+      await yieldEventLoop();
+      await sendJson(res, {
+        ...(await snapshot(state)),
+        started: true,
+        message: "Wrote the brief. Launching Cursor…",
+      });
+      void runImprove(state, pack, adapter);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/improve/accept") {
+      await decideImproveReview(state, res, "accept");
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/improve/reject") {
+      await decideImproveReview(state, res, "reject");
       return;
     }
 
@@ -146,7 +224,6 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
       try {
         const launched = await implementPack(state.pack, { adapter });
         state.last = launched.result;
-        broadcast(state);
         await sendJson(res, { ...(await snapshot(state)), message: launched.message });
       } catch (err) {
         sendJson(
@@ -214,19 +291,67 @@ async function snapshot(state: AppState) {
   if (state.pack && !state.last) {
     state.last = await compilePack(state.pack);
   }
+  const improveReview = state.pack ? await evaluateImproveReview(state.pack) : null;
+  if (improveReview?.files.length && !state.activity.some((line) => line.message === "Improve patch ready to review.")) {
+    pushActivity(state, "Improve patch ready to review.", "ok");
+  }
+  const health = state.last ? applyImproveReviewGate(state.last.health, improveReview) : null;
   return {
     cwd: state.cwd,
     packId: state.pack?.id ?? null,
     packRoot: state.pack?.root ?? null,
     packs: packs.map((p) => p.id),
     markdown: state.last?.markdown ?? "",
-    health: state.last?.health ?? null,
+    health,
     spec: state.last?.spec ?? null,
     hasApiKey: hasJevAccess(),
     productRepo: state.pack ? await inspectProductRepo(state.pack.root) : null,
     activity: state.activity,
     busy: state.busy,
+    improveReview,
   };
+}
+
+async function decideImproveReview(state: AppState, res: ServerResponse, decision: "accept" | "reject"): Promise<void> {
+  if (!state.pack) {
+    sendJson(res, { error: "No pack selected." }, 400);
+    return;
+  }
+  try {
+    if (decision === "accept") await acceptImproveReview(state.pack);
+    else await rejectImproveReview(state.pack);
+  } catch (err) {
+    sendJson(
+      res,
+      {
+        ...(await snapshot(state)),
+        error: err instanceof Error ? err.message : "Improve review failed.",
+      },
+      err instanceof ImproveReviewPendingError || err instanceof ImproveLintError ? 409 : 500,
+    );
+    return;
+  }
+  state.last = await compilePack(state.pack);
+  pushActivity(
+    state,
+    decision === "accept" ? "Accepted the Improve patch." : "Rejected the Improve patch.",
+    "ok",
+  );
+  await sendJson(res, {
+    ...(await snapshot(state)),
+    message: decision === "accept" ? "Kept the patch. Check when you are ready." : "Restored the spec from before Improve.",
+  });
+}
+
+async function runImprove(state: AppState, pack: PackPaths, adapter: "cursor" | "manual"): Promise<void> {
+  try {
+    const launched = await launchImprove(pack, { adapter });
+    pushActivity(state, launched.message, launched.ok ? "ok" : "error");
+  } catch (err) {
+    pushActivity(state, err instanceof Error ? err.message : "Improve failed.", "error");
+  } finally {
+    state.busy = null;
+  }
 }
 
 async function runProve(state: AppState, pack: PackPaths): Promise<void> {
@@ -243,31 +368,16 @@ async function runProve(state: AppState, pack: PackPaths): Promise<void> {
     }
   } finally {
     state.busy = null;
-    broadcastEvent(state, { type: "done", action: "prove" });
-    broadcast(state);
   }
 }
 
 function pushActivity(state: AppState, message: string, level: ActivityLevel = "info"): void {
   const line: ActivityLine = { at: new Date().toISOString(), level, message };
   state.activity = [...state.activity, line].slice(-80);
-  broadcastEvent(state, { type: "activity", ...line });
 }
 
 async function yieldEventLoop(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
-}
-
-function broadcast(state: AppState): void {
-  broadcastEvent(state, "reload");
-}
-
-function broadcastEvent(state: AppState, payload: unknown): void {
-  const data = typeof payload === "string" ? payload : JSON.stringify(payload);
-  const frame = `data: ${data}\n\n`;
-  for (const client of state.clients) {
-    client.write(frame);
-  }
 }
 
 async function serveCockpit(pathname: string, res: ServerResponse): Promise<boolean> {
@@ -276,13 +386,34 @@ async function serveCockpit(pathname: string, res: ServerResponse): Promise<bool
   const file = path.join(cockpitDir, relative);
   if (!file.startsWith(cockpitDir)) return false;
   try {
+    if (relative === "index.html") {
+      const html = await cacheBustHtml(await readFile(file, "utf8"));
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
+      res.end(html);
+      return true;
+    }
     const data = await readFile(file);
-    res.writeHead(200, { "Content-Type": contentType(file) });
+    res.writeHead(200, {
+      "Content-Type": contentType(file),
+      "Cache-Control": "no-store",
+    });
     res.end(data);
     return true;
   } catch {
     return false;
   }
+}
+
+async function cacheBustHtml(html: string): Promise<string> {
+  let out = html;
+  for (const asset of ["tokens.css", "styles.css", "app.js"] as const) {
+    const { mtimeMs } = await stat(path.join(cockpitDir, asset));
+    out = out.replaceAll(`/${asset}"`, `/${asset}?v=${Math.floor(mtimeMs)}"`);
+  }
+  return out;
 }
 
 function contentType(file: string): string {

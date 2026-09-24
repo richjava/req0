@@ -228,5 +228,6 @@ Cases run in spec order: UC-001 → UC-005. Allow cases mutate the database (app
 | `fixtures/runtime.yaml` | `baseUrl`, login selectors, `startCommand`, `resetCommand` |
 | `derived/qa-plan.yaml` | Compiled cases Prove actually runs |
 | `derived/proof-run.json` | Last verdicts + noul |
+| `derived/proof-report.md` | Same run, written for a QA reader |
 | `derived/prove-run.log` | Activity lines (boot, login, Jev, errors) |
 | `derived/jev-run.json` | Spec-coaching answers (Ready), not Prove |

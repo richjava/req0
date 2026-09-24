@@ -3,21 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Cache-Control" content="no-store" />
     <title>Req0 — Requirement Owner</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-      media="print"
-      onload="this.media='all'"
-    />
-    <noscript>
-      <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-        rel="stylesheet"
-      />
-    </noscript>
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
@@ -52,14 +39,17 @@
           <article class="status-pill" data-meter="ready" data-state="not_yet">
             <span class="status-pill-name">Ready</span>
             <strong id="meter-ready">Not yet</strong>
+            <button type="button" class="pill-btn" id="action-ready" hidden disabled></button>
           </article>
           <article class="status-pill" data-meter="build" data-state="not_yet">
             <span class="status-pill-name">Build</span>
             <strong id="meter-build">Not yet</strong>
+            <button type="button" class="pill-btn" id="action-build" hidden disabled></button>
           </article>
           <article class="status-pill" data-meter="proof" data-state="not_yet">
             <span class="status-pill-name">Proof</span>
             <strong id="meter-proof">Not yet</strong>
+            <button type="button" class="pill-btn" id="action-proof" hidden disabled></button>
           </article>
         </section>
 
@@ -78,8 +68,15 @@
         </section>
 
         <section class="panel" id="workspace">
-          <label class="editor-label" for="editor">requirement.md</label>
+          <div class="workspace-head">
+            <p class="editor-label" id="workspace-label">requirement.md</p>
+            <div class="review-actions hidden" id="review-actions">
+              <button type="button" class="btn-secondary" id="review-reject">Reject</button>
+              <button type="button" class="btn-primary" id="review-accept" disabled>Accept</button>
+            </div>
+          </div>
           <textarea class="textarea" id="editor" spellcheck="true"></textarea>
+          <div class="review-diff hidden" id="review-diff" hidden></div>
           <p class="save-state" id="save-state"></p>
         </section>
       </div>

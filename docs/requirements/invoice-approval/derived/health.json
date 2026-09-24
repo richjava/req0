@@ -9,7 +9,8 @@
     "reason": "no_api_key",
     "blockers": 0,
     "nits": 0,
-    "findings": []
+    "findings": [],
+    "jevCurrent": false
   },
   "build": {
     "state": "not_yet"
@@ -21,9 +22,29 @@
   },
   "nextAction": {
     "id": "check-jev",
-    "label": "Check this spec with Jev",
+    "label": "Check",
     "enabled": true,
     "hint": "Needs TYPESAFE_API_KEY."
+  },
+  "stages": {
+    "ready": {
+      "id": "check-jev",
+      "label": "Check",
+      "enabled": true,
+      "hint": "Needs TYPESAFE_API_KEY."
+    },
+    "build": {
+      "id": "implement",
+      "label": "Implement",
+      "enabled": false,
+      "hint": "Starts a Cursor agent with derived/implement-brief.md. Use --adapter=manual to skip launch."
+    },
+    "proof": {
+      "id": "prove",
+      "label": "Prove",
+      "enabled": false,
+      "hint": "Blocked without fixtures/runtime.yaml (baseUrl and deterministic login)."
+    }
   },
   "howThisIsGoing": "The pack is valid. Ready stays Not yet until a TypeSafe API key is set. Persona checks do not need a key."
 }

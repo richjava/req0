@@ -1,11 +1,15 @@
 import { mkdir, readFile, writeFile, readdir, access, appendFile } from "node:fs/promises";
 import path from "node:path";
 import { compileMarkdown, healthToStatusMarkdown, isRequirementId } from "./compile.js";
-import { assertImplementAllowed, launchAdapter } from "./implement.js";
+import { assertImplementAllowed, ImplementDisabledError, improvePrompt, launchAdapter } from "./implement.js";
+import { assertImproveAllowed, emitImproveBrief, improveFindings } from "./improve.js";
+import { clearImproveLog, readImproveLog, recordImprovePending } from "./improve-log.js";
+import { beginImproveReview, ImproveReviewPendingError, readImproveSnapshot } from "./improve-review.js";
 import { emitImplementBrief } from "./implement-brief.js";
 import { hasJevAccess, JevRequestError, JevUnavailableError, resolveJevClient, type JevClient } from "./jev.js";
 import { emitJevPack } from "./jev-pack.js";
 import { parsePersonasYaml, type PersonasResult } from "./personas.js";
+import { emitProofReport } from "./proof-report.js";
 import { emitQaPlan, emitQaPlanYaml } from "./qa-plan.js";
 import {
   assertProveAllowed,
@@ -37,10 +41,14 @@ export type PackPaths = {
   jevPack: string;
   jevRun: string;
   implementBrief: string;
+  improveBrief: string;
+  improveSnapshot: string;
+  improveLog: string;
   buildRun: string;
   runtime: string;
   qaPlan: string;
   proofRun: string;
+  proofReport: string;
   proveLog: string;
 };
 
@@ -59,10 +67,14 @@ export function packPaths(root: string): PackPaths {
     jevPack: path.join(derived, "jev-pack.json"),
     jevRun: path.join(derived, "jev-run.json"),
     implementBrief: path.join(derived, "implement-brief.md"),
+    improveBrief: path.join(derived, "improve-brief.md"),
+    improveSnapshot: path.join(derived, "improve-snapshot.json"),
+    improveLog: path.join(derived, "improve-log.json"),
     buildRun: path.join(derived, "build-run.json"),
     runtime: path.join(root, RUNTIME_FILE),
     qaPlan: path.join(derived, "qa-plan.yaml"),
     proofRun: path.join(derived, "proof-run.json"),
+    proofReport: path.join(derived, "proof-report.md"),
     proveLog: path.join(derived, "prove-run.log"),
   };
 }
@@ -149,8 +161,8 @@ export async function compilePack(paths: PackPaths): Promise<CompileResult> {
   let result = compileMarkdown(paths.id, markdown);
   if (result.spec) result = { ...result, jevPack: emitJevPack(result.spec) };
   const personas = await loadPersonas(paths);
+  const repo = await inspectProductRepo(paths.root);
   if (result.spec) {
-    const repo = await inspectProductRepo(paths.root);
     result = {
       ...result,
       implementBrief: emitImplementBrief({
@@ -167,17 +179,30 @@ export async function compilePack(paths: PackPaths): Promise<CompileResult> {
     jevRun,
     hasApiKey: hasJevAccess(),
   });
+  const improved = (await readImproveLog(paths)).accepted;
+  if (improved.length) {
+    result.health.ready = { ...result.health.ready, alreadyImproved: improved };
+  }
   const buildRun = await readBuildRun(paths);
-  result.health.build = evaluateBuild(result.spec, buildRun);
+  result.health.build = repo.implement
+    ? evaluateBuild(result.spec, buildRun)
+    : {
+        state: "not_yet",
+        owned: false,
+        message: "Implement is off in req0.json. Build this repo another way. Prove uses fixtures/runtime.yaml.",
+      };
   const runtime = await loadRuntime(paths);
   if (result.spec) {
     result.qaPlan = emitQaPlan(result.spec);
   }
   const proofRun = result.spec ? await readProofRun(paths) : null;
+  const succeededAt =
+    repo.implement && result.health.build.state === "succeeded" ? buildRun?.at : undefined;
   result.health.proof = evaluateProof({
     spec: result.spec,
     runtime: runtime.ok,
     run: proofRun,
+    buildAt: succeededAt,
   });
   if (!runtime.ok && !runtime.missing) {
     result.health.proof.message = runtime.findings[0]?.message;
@@ -201,6 +226,7 @@ export async function checkPack(paths: PackPaths, client?: JevClient): Promise<C
     };
     await mkdir(paths.derived, { recursive: true });
     await writeFile(paths.jevRun, `${JSON.stringify(run, null, 2)}\n`, "utf8");
+    await clearImproveLog(paths);
     return compilePack(paths);
   } catch (err) {
     if (err instanceof JevUnavailableError) {
@@ -280,6 +306,7 @@ export async function implementPack(
   const compiled = await compilePack(paths);
   assertImplementAllowed(compiled);
   const repo = await inspectProductRepo(paths.root);
+  if (!repo.implement) throw new ImplementDisabledError();
   const adapter = options.adapter ?? "cursor";
   const stack = repo.recorded ? repo.stack : DEFAULT_STACK;
   if (repo.root) {
@@ -298,7 +325,54 @@ export async function implementPack(
   return { result: await compilePack(paths), message: launch.message };
 }
 
+export async function writeImproveBrief(
+  paths: PackPaths,
+  compiled?: CompileResult | null,
+): Promise<{ result: CompileResult; brief: string }> {
+  const result = compiled ?? (await compilePack(paths));
+  assertImproveAllowed(result.health.ready);
+  const findings = improveFindings(result.health.ready);
+  const brief = emitImproveBrief({
+    spec: result.spec,
+    ready: result.health.ready,
+    findings,
+  });
+  await mkdir(paths.derived, { recursive: true });
+  await writeFile(paths.improveBrief, brief, "utf8");
+  await beginImproveReview(paths);
+  if (findings.length) await recordImprovePending(paths, findings);
+  return { result, brief };
+}
+
+export async function launchImprove(
+  paths: PackPaths,
+  options: { adapter?: AdapterId } = {},
+): Promise<{ ok: boolean; message: string }> {
+  const repo = await inspectProductRepo(paths.root);
+  const adapter = options.adapter ?? "cursor";
+  return launchAdapter(adapter, repo.root, paths.improveBrief, {
+    prompt: improvePrompt(paths.improveBrief),
+    openIde: false,
+    successMessage:
+      adapter === "manual"
+        ? "Wrote derived/improve-brief.md. Open it in any coding agent, or retry without adapter=manual to launch Cursor."
+        : "Started a Cursor agent. The cockpit will show a diff when the spec changes.",
+  });
+}
+
+export async function improvePack(
+  paths: PackPaths,
+  options: { adapter?: AdapterId } = {},
+): Promise<{ result: CompileResult; message: string; brief: string }> {
+  const written = await writeImproveBrief(paths);
+  const launch = await launchImprove(paths, options);
+  return { result: written.result, message: launch.message, brief: written.brief };
+}
+
 export async function writeRequirement(paths: PackPaths, markdown: string): Promise<CompileResult> {
+  if (await readImproveSnapshot(paths)) {
+    throw new ImproveReviewPendingError();
+  }
   await mkdir(paths.root, { recursive: true });
   await writeFile(paths.requirement, markdown, "utf8");
   return compilePack(paths);
@@ -351,6 +425,11 @@ export async function provePack(
   };
   const personas = await loadPersonas(paths);
   const repo = await inspectProductRepo(paths.root);
+  const buildRun = await readBuildRun(paths);
+  const buildAt =
+    compiled.health.build.owned !== false && compiled.health.build.state === "succeeded"
+      ? buildRun?.at
+      : undefined;
   const run = await provePlan(
     {
       spec: compiled.spec,
@@ -358,10 +437,22 @@ export async function provePack(
       runtime: runtime.runtime,
       personas,
       productRoot: repo.root,
+      buildAt,
     },
     { ...deps, onProgress },
   );
-  await persistProofRun(paths, run);
+  await persistProofRun(
+    paths,
+    run,
+    emitProofReport({
+      spec: compiled.spec,
+      plan: compiled.qaPlan,
+      run,
+      ready: compiled.health.ready,
+      baseUrl: runtime.runtime.baseUrl,
+    }),
+  );
+  onProgress("Wrote derived/proof-report.md.", "ok");
   const result = await compilePack(paths);
   const failed = run.cases.filter((item) => item.verdict === "fail").length;
   const review = run.cases.filter((item) => item.verdict === "review").length;

@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { isRequirementId } from "./compile.js";
-import { adapterInstructions, ImplementLockedError } from "./implement.js";
+import { adapterInstructions, ImplementDisabledError, ImplementLockedError } from "./implement.js";
 import { checkPack, compilePack, createPack, findRequirementsDir, implementPack, provePack, resolvePack } from "./pack.js";
 import { ProveLockedError } from "./proof.js";
 import { createAppState, createCockpitServer, refresh } from "./server.js";
@@ -88,7 +88,7 @@ async function main(command: string, rest: string[]): Promise<void> {
       console.log(adapterInstructions(adapter, pack.implementBrief));
       if (launched.result.health.build.state === "failed") process.exit(2);
     } catch (err) {
-      if (err instanceof ImplementLockedError) {
+      if (err instanceof ImplementLockedError || err instanceof ImplementDisabledError) {
         console.error(err.message);
         process.exit(2);
       }

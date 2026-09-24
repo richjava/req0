@@ -34,13 +34,13 @@ Confidence (same idea as Proof): noul ≥ **0.75** pass, ≤ **0.15** fail, else
 
 No API key (`TYPESAFE_API_KEY`) → Ready stays **Not yet**. Persona blockers still apply without a key. Do not fake Jev with regex in production. `REQ0_JEV=mock` is for tests and local demos only.
 
-**Shipped:** parse `fixtures/personas.yaml`, emit `derived/jev-pack.json` from this catalog, Ready meter (blockers first, Improve next-id), live `req0 check` / cockpit **Check this spec with Jev** via TypeSafe System One, mock client in `npm test`.
+**Shipped:** parse `fixtures/personas.yaml`, emit `derived/jev-pack.json` from this catalog, Ready meter (blockers first, opinionated Improve pass when blocked or pack noul is below 0.75), live `req0 check` / cockpit **Check this spec with Jev** via TypeSafe System One, mock client in `npm test`.
 
 ## Milestone 3 — A coding agent builds from the pack
 
 Portable `implement-brief.md`. Adapters: **Cursor launch** and **generic manual** only. Empty repo = no customer app at repo root (Req0’s own `package.json` does not count). Stack recorded in `req0.json` when Implement actually runs. Build Succeeded ≠ app boots.
 
-Implement stays **locked until Ready is Ready**. When Ready, `req0 implement` and the cockpit **Implement** button start a Cursor agent in the product repo, with `derived/implement-brief.md` in the prompt. `--adapter=manual` only records the run. Empty repo records the default stack in `req0.json`. Build Succeeded is not proof the app boots.
+Implement stays **locked until Ready is Ready**. When Ready, `req0 implement` and the cockpit **Implement** button start a Cursor agent in the product repo, with `derived/implement-brief.md` in the prompt. `--adapter=manual` only records the run. Empty repo records the default stack in `req0.json`. `"implement": false` in `req0.json` turns the stage off: no build stamp, Implement hidden, Prove uses Ready + runtime. Build Succeeded is not proof the app boots.
 
 **Shipped:** emit `derived/implement-brief.md` on a valid compile, empty-vs-existing product-repo detection, Cursor agent launch + manual skip, `derived/build-run.json`, Implement enabled only after Ready.
 
@@ -50,7 +50,7 @@ Work lives in the **Req0** repo. The app under test is the **product repo** (for
 
 ### Gate
 
-Prove stays **disabled** until Ready is Ready, Build is succeeded, and `fixtures/runtime.yaml` parses. Missing or invalid runtime fails closed: Proof stays **Not yet**, next action is still Prove, button off. Hint names the file. Personas stay in `fixtures/personas.yaml`; runtime does not duplicate passwords.
+Prove stays **disabled** until Ready is Ready and `fixtures/runtime.yaml` parses. Build succeeded is also required unless `req0.json` sets `"implement": false`. Missing or invalid runtime fails closed: Proof stays **Not yet**, next action is still Prove, button off. Hint names the file. Personas stay in `fixtures/personas.yaml`; runtime does not duplicate passwords.
 
 ### `fixtures/runtime.yaml`
 
@@ -69,17 +69,17 @@ Optional `startCommand` runs in the product-repo root only if `baseUrl` does not
 
 ### Compiled plan
 
-A valid spec always writes `derived/qa-plan.yaml` from `spec.json` only — one case per use case, never from ad-hoc tests. `kind` is `deny` when a step is `Look for …` or the outcome says the control is not available / absent or disabled / status unchanged; otherwise `allow`. `control` is the `Choose` / `Look for` label. The runner executes that file only.
+A valid spec always writes `derived/qa-plan.yaml` from `spec.json` only — one case per use case, never from ad-hoc tests. `kind` is `deny` when a step is `Look for …`. `Choose …` is `allow`, even if the Outcome later says the control is absent or disabled (that is the after-success state). If there is neither verb, an Outcome that the control is not available / absent or disabled / status unchanged is `deny`. `control` is the `Choose` / `Look for` label. The runner executes that file only.
 
 ### Runner
 
 - **Deny:** log in, follow Open/Choose/Select steps, then assert `control` is absent or disabled. No Jev. Do not invent HTTP posts; the UI check is the deny proof.
 - **Allow:** log in, follow steps, click `control`. Jev noul: does the page observation match the Outcome? Catalog `m4-proof-v1`. Instructions are pack-agnostic (url / text / options / visible controls). Open picks a visible name from the step and preconditions — not product paths.
 - Confidence (same gates as Ready): noul ≥ **0.75** pass, ≤ **0.15** fail, else **needs review**. Deterministic deny is pass or fail only.
-- Proof meter: `not_yet` / `passed` / `failed` / `needs_review` / `stale` (spec hash changed after the last run). Re-prove is allowed.
+- Proof meter: `not_yet` / `passed` / `failed` / `needs_review` / `stale` (spec hash changed, or — when Implement is owned — the latest succeeded build `at` differs from `proof-run.buildAt`). Re-prove is allowed.
 - Playwright drives Chromium. Jev is the existing TypeSafe client. This is not an npm dependency on `jev-browser`.
 
-**Shipped:** runtime parser, qa-plan emitter, `req0 prove` + cockpit Prove, `derived/proof-run.json`, Proof meter.
+**Shipped:** runtime parser, qa-plan emitter, `req0 prove` + cockpit Prove, `derived/proof-run.json`, `derived/proof-report.md`, Proof meter.
 
 ## Later
 
@@ -106,3 +106,5 @@ Drift (fixed here): architecture still listed Jev and coding agents as unbuilt. 
 ### Milestone 4
 
 Shipped vs acceptance: runtime gate, compiled qa-plan, deterministic deny, Jev noul on allow, Proof meter, cockpit/CLI Prove. Fence held: no screenshot vision (M5), no per-cell stale re-prove (M6), no second customer app, no `jev-browser` package.
+
+Cockpit fence update: the one-next-action rule is now **one primary + staged pill buttons** (Check / Improve it, Implement / Rebuild, Prove / Re-prove). Spec and Ready stay separate. Improve it is one opinionated writer pass for all open Ready findings (including pack-gate) when blocked or pack noul is below 0.75; Jev still only judges.

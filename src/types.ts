@@ -71,6 +71,20 @@ export type NextAction = {
   hint?: string;
 };
 
+export type StageAction = {
+  id: string;
+  label: string;
+  enabled: boolean;
+  hint?: string;
+  hidden?: boolean;
+};
+
+export type StageBoard = {
+  ready: StageAction;
+  build: StageAction;
+  proof: StageAction;
+};
+
 export type ReadyState = "not_yet" | "blocked" | "ready";
 
 export type ReadyReason =
@@ -105,6 +119,8 @@ export type ReadyMeter = {
   nits: number;
   nextId?: string;
   packNoul?: number;
+  jevCurrent?: boolean;
+  alreadyImproved?: string[];
   findings: ReadyFinding[];
 };
 
@@ -151,6 +167,8 @@ export type StackChoice = {
 export type Req0Config = {
   adapter?: AdapterId;
   stack?: StackChoice;
+  /** When false, Req0 does not own Implement. Prove uses Ready + runtime.yaml. */
+  implement?: boolean;
 };
 
 export type ProductRepo = {
@@ -159,12 +177,15 @@ export type ProductRepo = {
   stack: StackChoice;
   recorded: boolean;
   adapter: AdapterId;
+  implement: boolean;
 };
 
 export type BuildState = "not_yet" | "running" | "succeeded" | "failed" | "stale";
 
 export type BuildMeter = {
   state: BuildState;
+  /** False when req0.json sets implement: false. Prove does not need a build stamp. */
+  owned?: boolean;
   adapter?: AdapterId;
   message?: string;
 };
@@ -210,6 +231,7 @@ export type ProofCaseResult = {
 export type ProofRun = {
   specHash: string;
   checkedAt: string;
+  buildAt?: string;
   boot: { ok: boolean; message?: string };
   cases: ProofCaseResult[];
 };
@@ -234,6 +256,7 @@ export type Health = {
   build: BuildMeter;
   proof: ProofMeter;
   nextAction: NextAction;
+  stages?: StageBoard;
   howThisIsGoing: string;
 };
 

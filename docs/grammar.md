@@ -22,6 +22,7 @@ docs/requirements/<requirement-id>/
     build-run.json         # last implement launch
     qa-plan.yaml           # Milestone 4; compiled from spec.json
     proof-run.json         # last prove run
+    proof-report.md        # last prove, human-readable for QA
 ```
 
 `<requirement-id>` is the folder name: kebab-case `[a-z0-9-]+` (example: `invoice-approval`).
@@ -111,7 +112,7 @@ login:
   submit: "button[type=submit]"
 ```
 
-`email` / `password` / `submit` are CSS selectors. Credentials come from the Actor’s persona, not this file. `derived/qa-plan.yaml` is compiled from `spec.json` (one case per use case) and is not hand-edited.
+`email` / `password` / `submit` are CSS selectors. Credentials come from the Actor’s persona, not this file. `derived/qa-plan.yaml` is compiled from `spec.json` (one case per use case) and is not hand-edited. `Look for …` is deny. `Choose …` is allow, even when the Outcome then says the control is absent or disabled.
 
 ## Golden pack
 

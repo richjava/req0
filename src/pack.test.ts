@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { ImplementLockedError } from "./implement.js";
+import { ImplementDisabledError, ImplementLockedError } from "./implement.js";
 import { createMockJevClient } from "./jev.js";
-import { checkPack, compilePack, createPack, implementPack, packPaths, provePack } from "./pack.js";
+import { checkPack, compilePack, createPack, implementPack, improvePack, packPaths, provePack } from "./pack.js";
 import { readReq0Config } from "./stack.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -28,7 +28,7 @@ describe("pack compile", () => {
       expect(health.nextAction.enabled).toBe(true);
     } else if (health.ready.reason === "blockers") {
       expect(health.ready.blockers).toBeGreaterThan(0);
-      expect(health.nextAction.label).toMatch(/^Improve /);
+      expect(health.nextAction.label).toBe("Improve it");
     } else {
       expect(health.ready.state).toBe("not_yet");
       expect(["no_api_key", "unchecked"]).toContain(health.ready.reason);
@@ -172,6 +172,100 @@ login:
       const proveLog = await readFile(paths.proveLog, "utf8");
       expect(proveLog).toMatch(/Checking http:\/\/127.0.0.1:3000/);
       expect(proveLog).toMatch(/Proof passed/);
+      const proofRun = JSON.parse(await readFile(paths.proofRun, "utf8"));
+      const buildRun = JSON.parse(await readFile(paths.buildRun, "utf8"));
+      expect(proofRun.buildAt).toBe(buildRun.at);
+      const report = await readFile(paths.proofReport, "utf8");
+      expect(report).toContain("# Proof report — demo-pack");
+      expect(report).toContain("### UC-001");
+      expect(report).toContain("Expected: Invoices are listed.");
+      expect(report).toContain("## Passed");
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("proves without a build stamp when req0.json sets implement false", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "req0-impl-off-"));
+    const root = path.join(parent, "docs/requirements/demo-pack");
+    try {
+      const paths = packPaths(root);
+      await mkdir(path.join(root, "fixtures"), { recursive: true });
+      await writeFile(paths.requirement, READY_MD, "utf8");
+      await writeFile(
+        paths.personas,
+        "personas:\n  Viewer:\n    email: viewer@example.test\n    password: x\n",
+        "utf8",
+      );
+      await writeFile(
+        paths.runtime,
+        `baseUrl: http://127.0.0.1:3000
+login:
+  path: /login
+  email: "#email"
+  password: "#password"
+  submit: button
+`,
+        "utf8",
+      );
+      await writeFile(path.join(parent, "req0.json"), `${JSON.stringify({ implement: false }, null, 2)}\n`, "utf8");
+      await checkPack(paths, createMockJevClient());
+      const compiled = await compilePack(paths);
+      expect(compiled.health.build.owned).toBe(false);
+      expect(compiled.health.stages?.build.hidden).toBe(true);
+      expect(compiled.health.nextAction.id).toBe("prove");
+      expect(compiled.health.nextAction.enabled).toBe(true);
+      await expect(implementPack(paths, { adapter: "manual" })).rejects.toBeInstanceOf(ImplementDisabledError);
+      await expect(readFile(paths.buildRun, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      const proved = await provePack(paths, {
+        client: createMockJevClient(),
+        waitForUrl: async () => true,
+        driver: {
+          async runCase() {
+            return {
+              url: "http://127.0.0.1:3000/invoices",
+              text: "Invoices are listed",
+              options: [],
+              controlAvailable: false,
+              controlDisabled: false,
+              clicked: false,
+            };
+          },
+        },
+      });
+      expect(proved.result.health.proof.state).toBe("passed");
+      const proofRun = JSON.parse(await readFile(paths.proofRun, "utf8"));
+      expect(proofRun.buildAt).toBeUndefined();
+      expect(await readFile(paths.proofReport, "utf8")).toContain("Result: **Passed");
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("writes an improve brief without recording a build run", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "req0-improve-"));
+    const root = path.join(parent, "docs/requirements/demo-pack");
+    try {
+      const paths = packPaths(root);
+      await mkdir(path.join(root, "fixtures"), { recursive: true });
+      await writeFile(paths.requirement, READY_MD, "utf8");
+      await writeFile(paths.personas, "personas:\n", "utf8");
+      const compiled = await compilePack(paths);
+      expect(compiled.health.ready.findings.some((finding) => finding.kind === "persona_missing")).toBe(true);
+      const improved = await improvePack(paths, { adapter: "manual" });
+      expect(improved.brief).toContain("Viewer");
+      expect(improved.brief).toContain("<role-slug>@example.test");
+      expect(improved.brief).toContain("test-only-not-production");
+      expect(improved.brief).toContain("Opinionated writer pass");
+      const brief = await readFile(paths.improveBrief, "utf8");
+      expect(brief).toContain("persona_missing");
+      const snap = JSON.parse(await readFile(paths.improveSnapshot, "utf8")) as {
+        files: { relative: string; content: string | null }[];
+      };
+      expect(snap.files.some((file) => file.relative === "requirement.md" && file.content?.includes("Invoice"))).toBe(
+        true,
+      );
+      await expect(readFile(paths.buildRun, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await rm(parent, { recursive: true, force: true });
     }

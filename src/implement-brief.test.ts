@@ -22,7 +22,7 @@ describe("emitImplementBrief", () => {
     );
     const brief = emitImplementBrief({
       spec: spec!,
-      repo: { root: repoRoot, empty: true, stack: DEFAULT_STACK, recorded: false, adapter: "manual" },
+      repo: { root: repoRoot, empty: true, stack: DEFAULT_STACK, recorded: false, adapter: "manual", implement: true },
       adapter: "manual",
       personas,
     });

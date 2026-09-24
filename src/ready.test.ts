@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parsePersonasYaml } from "./personas.js";
 import { applyReadyToHealth, evaluateBuild, evaluateReady, specHash } from "./ready.js";
+import { readyBadge } from "./stages.js";
 import type { Health, JevRun, SpecAst } from "./types.js";
 
 const spec: SpecAst = {
@@ -85,6 +86,28 @@ describe("evaluateReady", () => {
     });
     expect(ready.state).toBe("ready");
     expect(ready.blockers).toBe(0);
+    expect(ready.jevCurrent).toBe(true);
+    expect(ready.packNoul).toBe(0.91);
+    expect(readyBadge(ready)).toBe("Ready · 0.91");
+  });
+
+  it("drops a jev-run whose specHash does not match and hides noul", () => {
+    const ready = evaluateReady({
+      spec,
+      specState: "valid",
+      personas,
+      hasApiKey: true,
+      jevRun: {
+        specHash: "other",
+        checkedAt: "2026-01-01T00:00:00.000Z",
+        answers: [{ id: "pack.agent-ready", type: "noul", noul: 0.91 }],
+      },
+    });
+    expect(ready.state).toBe("not_yet");
+    expect(ready.reason).toBe("unchecked");
+    expect(ready.jevCurrent).toBe(false);
+    expect(ready.packNoul).toBeUndefined();
+    expect(readyBadge(ready)).toBe("Not yet");
   });
 
   it("treats a low observable noul as an untestable-rule blocker", () => {
@@ -178,8 +201,25 @@ describe("scoreboard", () => {
       ]),
     });
     const health = applyReadyToHealth(baseHealth(), ready);
-    expect(health.nextAction.id).toBe("fix-ready");
-    expect(health.nextAction.label).toBe("Improve BR-001");
+    expect(health.nextAction.id).toBe("improve");
+    expect(health.nextAction.label).toBe("Improve it");
+    expect(health.stages?.ready).toMatchObject({ id: "improve", enabled: true });
+    expect(health.howThisIsGoing).toMatch(/Improve it can raise pack noul/);
+    expect(health.stages?.build.enabled).toBe(false);
+  });
+
+  it("shows Check after a hash mismatch and locks Implement until Ready", () => {
+    const ready = evaluateReady({
+      spec,
+      specState: "valid",
+      personas,
+      hasApiKey: true,
+      jevRun: { specHash: "stale", checkedAt: "2026-01-01T00:00:00.000Z", answers: [] },
+    });
+    const health = applyReadyToHealth(baseHealth(), ready);
+    expect(health.stages?.ready).toMatchObject({ id: "check-jev", label: "Check", enabled: true });
+    expect(health.nextAction.id).toBe("check-jev");
+    expect(health.stages?.build.enabled).toBe(false);
   });
 
   it("enables Implement when Ready, then Prove after a succeeded build", () => {
@@ -200,6 +240,8 @@ describe("scoreboard", () => {
     const before = applyReadyToHealth(baseHealth(), ready);
     expect(before.nextAction.id).toBe("implement");
     expect(before.nextAction.enabled).toBe(true);
+    expect(before.stages?.ready.enabled).toBe(false);
+    expect(before.stages?.build).toMatchObject({ id: "implement", label: "Implement", enabled: true });
     const after = applyReadyToHealth(baseHealth({ state: "succeeded", adapter: "manual" }), ready);
     expect(after.nextAction.id).toBe("prove");
     expect(after.nextAction.enabled).toBe(false);
@@ -212,7 +254,18 @@ describe("scoreboard", () => {
     );
     expect(withRuntime.nextAction.id).toBe("prove");
     expect(withRuntime.nextAction.enabled).toBe(true);
+    expect(withRuntime.stages?.build.label).toBe("Rebuild");
+    expect(withRuntime.stages?.proof.label).toBe("Prove");
     expect(withRuntime.howThisIsGoing).toBe("");
+    const reprove = applyReadyToHealth(
+      {
+        ...baseHealth({ state: "succeeded", adapter: "manual" }),
+        proof: { state: "passed", runtime: true, findings: [] },
+      },
+      ready,
+    );
+    expect(reprove.stages?.proof.label).toBe("Re-prove");
+    expect(reprove.nextAction.id).toBe("prove");
     const proved = applyReadyToHealth(
       {
         ...baseHealth({
@@ -226,6 +279,34 @@ describe("scoreboard", () => {
       ready,
     );
     expect(proved.howThisIsGoing).toBe("");
+  });
+
+  it("skips Implement and enables Prove when Build is not owned", () => {
+    const ready = evaluateReady({
+      spec,
+      specState: "valid",
+      personas,
+      hasApiKey: true,
+      jevRun: run([
+        { id: "rule.observable.BR-001", type: "noul", noul: 0.95 },
+        { id: "usecase.contradicts.UC-001", type: "noul", noul: 0.04 },
+        { id: "section.score.business-rules", type: "score", score: 2 },
+        { id: "section.score.use-cases", type: "score", score: 2 },
+        { id: "section.score.roles-permissions", type: "score", score: 2 },
+        { id: "pack.agent-ready", type: "noul", noul: 0.91 },
+      ]),
+    });
+    const health = applyReadyToHealth(
+      {
+        ...baseHealth({ state: "not_yet", owned: false, message: "Implement is off in req0.json." }),
+        proof: { state: "not_yet", runtime: true, findings: [] },
+      },
+      ready,
+    );
+    expect(health.stages?.build).toMatchObject({ id: "implement", enabled: false, hidden: true });
+    expect(health.nextAction.id).toBe("prove");
+    expect(health.nextAction.enabled).toBe(true);
+    expect(health.howThisIsGoing).toBe("");
   });
 });
 

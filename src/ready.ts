@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { NOUL_FAIL, NOUL_PASS } from "./gates.js";
+import { improveAllowed } from "./improve.js";
 import { missingPersonaRoles, type PersonasResult } from "./personas.js";
+import { computeStages, primaryAction } from "./stages.js";
 import type {
   BuildMeter,
   BuildRun,
   CompileResult,
   Health,
   JevRun,
-  ProofMeter,
   ReadyFinding,
   ReadyMeter,
   SpecAst,
@@ -35,6 +36,7 @@ export function emptyReady(reason: ReadyMeter["reason"] = "spec_invalid"): Ready
     reason,
     blockers: 0,
     nits: 0,
+    jevCurrent: false,
     findings: [],
   };
 }
@@ -181,6 +183,8 @@ export function evaluateReady(input: {
   const nits = findings.filter((finding) => finding.severity === "nit").length;
   findings.sort((a, b) => Number(b.severity === "blocker") - Number(a.severity === "blocker"));
 
+  const jevCurrent = Boolean(run);
+
   if (blockers > 0) {
     return {
       state: "blocked",
@@ -189,6 +193,7 @@ export function evaluateReady(input: {
       nits,
       nextId: nextId ?? firstSpecId(findings),
       packNoul,
+      jevCurrent,
       findings,
     };
   }
@@ -201,6 +206,7 @@ export function evaluateReady(input: {
       nits,
       nextId,
       packNoul,
+      jevCurrent: true,
       findings,
     };
   }
@@ -212,123 +218,46 @@ export function evaluateReady(input: {
     nits: 0,
     findings,
     packNoul,
+    jevCurrent: false,
   };
 }
 
 export function applyReadyToHealth(health: Health, ready: ReadyMeter): Health {
-  const { nextAction, howThisIsGoing } = scoreboard(health, ready);
-  return { ...health, ready, nextAction, howThisIsGoing };
+  const stages = computeStages(health, ready);
+  const nextAction = primaryAction(health, ready, stages);
+  return { ...health, ready, stages, nextAction, howThisIsGoing: goingCopy(health, ready) };
 }
 
-function scoreboard(health: Health, ready: ReadyMeter): Pick<Health, "nextAction" | "howThisIsGoing"> {
+function goingCopy(health: Health, ready: ReadyMeter): string {
   const specState = health.spec.state;
   const errors = health.spec.findings.filter((finding) => finding.severity === "error");
 
-  if (specState === "empty") {
-    return {
-      nextAction: { id: "create", label: "Create this requirement", enabled: true },
-      howThisIsGoing: "Nothing here yet. Create the pack to begin.",
-    };
-  }
-
+  if (specState === "empty") return "Nothing here yet. Create the pack to begin.";
   if (specState !== "valid") {
     const first = errors[0];
-    return {
-      nextAction: {
-        id: "fix-spec",
-        label: first ? `Fix: ${truncate(first.message, 72)}` : "Finish the required sections",
-        enabled: true,
-      },
-      howThisIsGoing:
-        errors.length === 1
-          ? `1 compile error. ${first?.message ?? "Keep filling the spec."}`
-          : `${errors.length} compile errors. Spec is drafting, not valid.`,
-    };
+    return errors.length === 1
+      ? `1 compile error. ${first?.message ?? "Keep filling the spec."}`
+      : `${errors.length} compile errors. Spec is drafting, not valid.`;
   }
 
   if (ready.state === "blocked") {
-    const first = ready.findings.find((finding) => finding.severity === "blocker");
-    const label = ready.nextId
-      ? `Improve ${ready.nextId}`
-      : first
-        ? `Fix: ${truncate(first.message, 72)}`
-        : "Fix Ready blockers";
-    return {
-      nextAction: {
-        id: "fix-ready",
-        label,
-        enabled: true,
-        hint: first?.message,
-      },
-      howThisIsGoing:
-        ready.nits > 0
-          ? `${ready.blockers} blocker${ready.blockers === 1 ? "" : "s"}, ${ready.nits} nit${ready.nits === 1 ? "" : "s"}. ${nextLine(ready)}`
-          : `${ready.blockers} blocker${ready.blockers === 1 ? "" : "s"}. ${nextLine(ready)}`,
-    };
+    return ready.nits > 0
+      ? `${ready.blockers} blocker${ready.blockers === 1 ? "" : "s"}, ${ready.nits} nit${ready.nits === 1 ? "" : "s"}. ${nextLine(ready)}`
+      : `${ready.blockers} blocker${ready.blockers === 1 ? "" : "s"}. ${nextLine(ready)}`;
   }
 
   if (ready.state === "ready") {
-    if (health.build.state === "succeeded") {
-      const runtime = health.proof.runtime;
-      return {
-        nextAction: {
-          id: "prove",
-          label: "Prove this requirement",
-          enabled: runtime,
-          hint: proofHint(health.proof),
-        },
-        howThisIsGoing: proofGoing(health),
-      };
-    }
-    if (health.build.state === "stale") {
-      return {
-        nextAction: {
-          id: "implement",
-          label: "Re-implement this requirement",
-          enabled: true,
-          hint: health.build.message,
-        },
-        howThisIsGoing: "Spec changed after the last implement run. Build is stale.",
-      };
-    }
-    return {
-      nextAction: {
-        id: "implement",
-        label: "Implement this requirement",
-        enabled: true,
-        hint:
-          health.build.state === "failed"
-            ? health.build.message
-            : "Starts a Cursor agent with derived/implement-brief.md. Use --adapter=manual to skip launch.",
-      },
-      howThisIsGoing:
-        ready.nits > 0
-          ? `Ready. Zero blockers, ${ready.nits} nit${ready.nits === 1 ? "" : "s"}. Implementation is next.`
-          : "Ready. Zero blockers. Implementation is next.",
-    };
+    if (health.build.owned === false || health.build.state === "succeeded") return proofGoing(health);
+    if (health.build.state === "stale") return "Spec changed after the last implement run. Build is stale.";
+    return ready.nits > 0
+      ? `Ready. Zero blockers, ${ready.nits} nit${ready.nits === 1 ? "" : "s"}. Implementation is next.`
+      : "Ready. Zero blockers. Implementation is next.";
   }
 
   if (ready.reason === "no_api_key") {
-    return {
-      nextAction: {
-        id: "check-jev",
-        label: "Check this spec with Jev",
-        enabled: true,
-        hint: "Needs TYPESAFE_API_KEY.",
-      },
-      howThisIsGoing:
-        "The pack is valid. Ready stays Not yet until a TypeSafe API key is set. Persona checks do not need a key.",
-    };
+    return "The pack is valid. Ready stays Not yet until a TypeSafe API key is set. Persona checks do not need a key.";
   }
-
-  return {
-    nextAction: {
-      id: "check-jev",
-      label: "Check this spec with Jev",
-      enabled: true,
-    },
-    howThisIsGoing: "The pack is valid. Check it with Jev to turn on Ready.",
-  };
+  return "The pack is valid. Check it with Jev to turn on Ready.";
 }
 
 function classifyNoul(
@@ -363,6 +292,11 @@ function firstSpecId(findings: ReadyFinding[]): string | undefined {
 }
 
 function nextLine(ready: ReadyMeter): string {
+  if (improveAllowed(ready)) {
+    return typeof ready.packNoul === "number" && ready.packNoul < NOUL_PASS
+      ? `Improve it can raise pack noul above ${NOUL_PASS.toFixed(2)}.`
+      : "Improve it writes one opinionated pass.";
+  }
   if (ready.nextId) return `Fix ${ready.nextId} next.`;
   const first = ready.findings.find((finding) => finding.severity === "blocker");
   return first?.message ?? "Fix the blockers.";
@@ -370,19 +304,6 @@ function nextLine(ready: ReadyMeter): string {
 
 function fmt(noul: number): string {
   return noul.toFixed(2);
-}
-
-function proofHint(proof: ProofMeter): string {
-  if (!proof.runtime) {
-    return "Blocked without fixtures/runtime.yaml (baseUrl and deterministic login).";
-  }
-  if (proof.state === "passed") return "Proof passed. Click to re-run.";
-  if (proof.state === "failed") return proof.message ?? "Proof failed. Click to re-run.";
-  if (proof.state === "needs_review") {
-    return "Proof needs review (noul between 0.15 and 0.75).";
-  }
-  if (proof.state === "stale") return "Spec changed after the last proof run. Re-prove.";
-  return "Runs compiled derived/qa-plan.yaml in a browser. Progress and errors appear in Activity.";
 }
 
 function proofGoing(health: Health): string {
@@ -395,6 +316,3 @@ function proofGoing(health: Health): string {
   return "";
 }
 
-function truncate(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
-}

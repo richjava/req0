@@ -44,15 +44,18 @@ export async function readReq0Config(repoRoot: string): Promise<Req0Config | nul
 }
 
 export async function writeReq0Config(repoRoot: string, config: Req0Config): Promise<void> {
-  await writeFile(path.join(repoRoot, REQ0_CONFIG_FILE), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  const previous = await readReq0Config(repoRoot);
+  const next = { ...previous, ...config };
+  await writeFile(path.join(repoRoot, REQ0_CONFIG_FILE), `${JSON.stringify(next, null, 2)}\n`, "utf8");
 }
 
 export async function inspectProductRepo(packRoot: string): Promise<ProductRepo> {
   const root = findRepoRootFromPack(packRoot);
   if (!root) {
-    return { root: null, empty: true, stack: DEFAULT_STACK, recorded: false, adapter: "manual" };
+    return { root: null, empty: true, stack: DEFAULT_STACK, recorded: false, adapter: "manual", implement: true };
   }
   const config = await readReq0Config(root);
+  const implement = config?.implement !== false;
   if (config?.stack) {
     return {
       root,
@@ -60,6 +63,7 @@ export async function inspectProductRepo(packRoot: string): Promise<ProductRepo>
       stack: config.stack,
       recorded: true,
       adapter: config.adapter === "cursor" ? "cursor" : "manual",
+      implement,
     };
   }
   const empty = !(await hasCustomerApp(root));
@@ -69,6 +73,7 @@ export async function inspectProductRepo(packRoot: string): Promise<ProductRepo>
     stack: DEFAULT_STACK,
     recorded: false,
     adapter: config?.adapter === "cursor" ? "cursor" : "manual",
+    implement,
   };
 }
 

@@ -25,7 +25,7 @@ export class ProveLockedError extends Error {
   readonly code = "prove_gate";
 
   constructor(
-    message = "Prove is locked until Ready is Ready, Build succeeded, and fixtures/runtime.yaml parses.",
+    message = "Prove is locked until Ready is Ready, fixtures/runtime.yaml parses, and Build succeeded (unless implement is off in req0.json).",
   ) {
     super(message);
     this.name = "ProveLockedError";
@@ -45,6 +45,7 @@ export function evaluateProof(input: {
   spec: SpecAst | null;
   runtime: boolean;
   run: ProofRun | null;
+  buildAt?: string | null;
 }): ProofMeter {
   if (!input.runtime) return emptyProof(false);
   if (!input.run || !input.spec) return emptyProof(true);
@@ -53,6 +54,14 @@ export function evaluateProof(input: {
       state: "stale",
       runtime: true,
       message: "Spec changed after the last proof run.",
+      findings: [],
+    };
+  }
+  if (input.buildAt && input.run.buildAt !== input.buildAt) {
+    return {
+      state: "stale",
+      runtime: true,
+      message: "Build changed after the last proof run.",
       findings: [],
     };
   }
@@ -96,7 +105,7 @@ export function assertProveAllowed(result: CompileResult): void {
   if (result.health.ready.state !== "ready") {
     throw new ProveLockedError("Prove is locked until Ready is Ready.");
   }
-  if (result.health.build.state !== "succeeded") {
+  if (result.health.build.owned !== false && result.health.build.state !== "succeeded") {
     throw new ProveLockedError("Prove is locked until Build succeeded.");
   }
   if (!result.health.proof.runtime) {
@@ -113,6 +122,7 @@ export async function provePlan(
     runtime: RuntimeFixture;
     personas: PersonasResult;
     productRoot: string | null;
+    buildAt?: string;
   },
   deps: {
     driver?: ProofDriver;
@@ -132,23 +142,13 @@ export async function provePlan(
     fetchImpl,
   });
   if (!boot.ok) {
-    return {
-      specHash: specHash(input.spec),
-      checkedAt: new Date().toISOString(),
-      boot,
-      cases: [],
-    };
+    return stampProofRun(input.spec, boot, [], input.buildAt);
   }
 
   if (input.runtime.resetCommand && !input.productRoot) {
     const message = "resetCommand is set, but there is no product repo root to run it in.";
     note(message, "error");
-    return {
-      specHash: specHash(input.spec),
-      checkedAt: new Date().toISOString(),
-      boot: { ok: false, message },
-      cases: [],
-    };
+    return stampProofRun(input.spec, { ok: false, message }, [], input.buildAt);
   }
 
   const total = input.plan.cases.length;
@@ -160,12 +160,7 @@ export async function provePlan(
   } catch (err) {
     const message = shortError(err);
     note(message, "error");
-    return {
-      specHash: specHash(input.spec),
-      checkedAt: new Date().toISOString(),
-      boot: { ok: false, message },
-      cases: [],
-    };
+    return stampProofRun(input.spec, { ok: false, message }, [], input.buildAt);
   }
   const client = deps.client ?? (process.env.REQ0_PROOF === "mock" ? createMockJevClient() : resolveJevClient());
   const cases: ProofCaseResult[] = [];
@@ -221,20 +216,34 @@ export async function provePlan(
     await driver.close?.();
   }
 
+  return stampProofRun(input.spec, { ok: true }, cases, input.buildAt);
+}
+
+function stampProofRun(
+  spec: SpecAst,
+  boot: ProofRun["boot"],
+  cases: ProofCaseResult[],
+  buildAt?: string,
+): ProofRun {
   return {
-    specHash: specHash(input.spec),
+    specHash: specHash(spec),
     checkedAt: new Date().toISOString(),
-    boot: { ok: true },
+    ...(buildAt ? { buildAt } : {}),
+    boot,
     cases,
   };
 }
 
 export async function persistProofRun(
-  paths: { derived: string; proofRun: string },
+  paths: { derived: string; proofRun: string; proofReport?: string },
   run: ProofRun,
+  report?: string,
 ): Promise<void> {
   await mkdir(paths.derived, { recursive: true });
   await writeFile(paths.proofRun, `${JSON.stringify(run, null, 2)}\n`, "utf8");
+  if (paths.proofReport && report !== undefined) {
+    await writeFile(paths.proofReport, report.endsWith("\n") ? report : `${report}\n`, "utf8");
+  }
 }
 
 async function judgeCase(
