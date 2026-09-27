@@ -58,14 +58,31 @@ describe("cockpit reload contract", () => {
     const html = await page.text();
     expect(html).toMatch(/app\.js\?v=\d+/);
     expect(html).toMatch(/no-store/);
+    expect(html).toContain("req0-logo-horiz.png");
+    expect(html).toContain("pipeline-graph");
+    const logo = await fetch(`${url}/req0-logo-horiz.png`);
+    expect(logo.status).toBe(200);
+    expect(logo.headers.get("content-type")).toMatch(/image\/png/);
+    expect(html).toContain("stage-nav");
+    expect(html).toContain("view-define");
+    expect(html).toContain("view-spec");
+    expect(html).toContain("status-bar");
+    expect(html).toContain("view-judgment");
+    expect(html).toContain("view-implement");
+    expect(html).toContain("view-qa");
     expect(html).toContain("action-build-ignore");
     expect(html).toContain("action-build-stop");
     expect(html).toContain("markdown-editor");
     expect(html).toContain("Was implementation successful?");
+    expect(html).not.toContain("meter-spec");
+    expect(html).not.toMatch(/\bnew\s+EventSource\b|EventSource\s*\(/);
     const editor = await fetch(`${url}/markdown-editor.js`);
     expect(editor.status).toBe(200);
     expect(await editor.text()).toMatch(/createMarkdownEditor/);
-    await expect(state.json()).resolves.toMatchObject({ busy: null });
+    const snap = await state.json();
+    expect(snap).toMatchObject({ busy: null });
+    expect(snap.pipeline.nodes.map((node) => node.id)).toEqual(["start", "define", "implement", "qa", "end"]);
+    expect(snap.sections[0]).toMatchObject({ name: "Business Rules", required: true });
   });
 
   it("records a stack on POST /api/stack", async () => {
@@ -78,6 +95,7 @@ describe("cockpit reload contract", () => {
       expect(before.productRepo.empty).toBe(true);
       expect(before.productRepo.recorded).toBe(false);
       const html = await (await fetch(`${url}/`)).text();
+      expect(html).toContain("stack-gate");
       expect(html).toContain("stack-bar");
       const res = await fetch(`${url}/api/stack`, {
         method: "POST",

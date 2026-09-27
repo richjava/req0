@@ -3,41 +3,53 @@ import { createMarkdownEditor } from "./markdown-editor.js";
 const els = {
   title: document.getElementById("pack-title"),
   going: document.getElementById("how-going"),
-  spec: document.getElementById("meter-spec"),
-  ready: document.getElementById("meter-ready"),
-  build: document.getElementById("meter-build"),
-  proof: document.getElementById("meter-proof"),
   next: document.getElementById("next-action"),
   hint: document.getElementById("next-hint"),
+  graph: document.getElementById("pipeline-graph"),
+  stageNav: document.getElementById("stage-nav"),
+  viewDefine: document.getElementById("view-define"),
+  viewSpec: document.getElementById("view-spec"),
+  viewJudgment: document.getElementById("view-judgment"),
+  viewImplement: document.getElementById("view-implement"),
+  viewQa: document.getElementById("view-qa"),
+  specStatus: document.getElementById("spec-status"),
+  specSections: document.getElementById("spec-sections"),
+  specFindings: document.getElementById("spec-findings"),
+  judgmentBadge: document.getElementById("judgment-badge"),
+  judgmentFindings: document.getElementById("judgment-findings"),
+  implementStatus: document.getElementById("implement-status"),
+  qaStatus: document.getElementById("qa-status"),
+  implementActivity: document.getElementById("implement-activity"),
+  qaActivity: document.getElementById("qa-activity"),
+  proofReport: document.getElementById("proof-report"),
   actionReady: document.getElementById("action-ready"),
   actionBuild: document.getElementById("action-build"),
   actionBuildIgnore: document.getElementById("action-build-ignore"),
   actionBuildStop: document.getElementById("action-build-stop"),
   actionProof: document.getElementById("action-proof"),
+  actionFixProof: document.getElementById("action-fix-proof"),
   ignoreDialog: document.getElementById("ignore-build-dialog"),
   ignoreYes: document.getElementById("ignore-build-yes"),
   ignoreNo: document.getElementById("ignore-build-no"),
   ignoreCancel: document.getElementById("ignore-build-cancel"),
-  sections: document.getElementById("sections"),
-  findings: document.getElementById("findings"),
   editor: document.getElementById("editor"),
   save: document.getElementById("save-state"),
   createBar: document.getElementById("create-bar"),
   newId: document.getElementById("new-id"),
   createNew: document.getElementById("create-new"),
   createError: document.getElementById("create-error"),
+  stackGate: document.getElementById("stack-gate"),
   stackBar: document.getElementById("stack-bar"),
   stackError: document.getElementById("stack-error"),
   stackNextjs: document.getElementById("stack-nextjs"),
   stackAmplify: document.getElementById("stack-amplify"),
-  workspace: document.getElementById("workspace"),
-  activityPanel: document.getElementById("activity-panel"),
+  cockpitApp: document.getElementById("cockpit-app"),
+  workspace: document.getElementById("view-define"),
   workspaceLabel: document.getElementById("workspace-label"),
   reviewActions: document.getElementById("review-actions"),
   reviewDiff: document.getElementById("review-diff"),
   reviewAccept: document.getElementById("review-accept"),
   reviewReject: document.getElementById("review-reject"),
-  activity: document.getElementById("activity"),
 };
 
 let state = null;
@@ -55,9 +67,12 @@ const markdownEditor = createMarkdownEditor(document.getElementById("editor"), {
     }, 280);
   },
 });
+let currentView = "define";
+let defineOpen = true;
 let focusedSection = "Business Rules";
 let actionNotice = "";
 let actionBusy = false;
+let headerBusyLabel = "";
 let activityLines = [];
 let lastActivityKey = "";
 let loadInFlight = false;
@@ -96,37 +111,48 @@ function scheduleLoad() {
   }, 250);
 }
 
+function needsStackGate(snapshot) {
+  const repo = snapshot?.productRepo;
+  return Boolean(repo?.root && repo.implement && repo.empty && !repo.recorded);
+}
+
 function render() {
   const health = state.health;
   const packId = state.packId;
-  els.title.textContent = packId ? packId.replaceAll("-", " ") : "No requirement selected";
+  els.title.textContent = packId ? `Requirement: ${packId.replaceAll("-", " ")}` : "No requirement selected";
   els.going.textContent = health?.howThisIsGoing ?? "Create a requirement pack to begin.";
   els.going.hidden = !els.going.textContent.trim();
-
-  setMeter("spec", health?.spec.state ?? "empty");
-  setMeter("ready", health?.ready.state ?? "not_yet", readyLabel(health?.ready));
-  const buildOwned = health?.build?.owned !== false;
-  const buildCard = document.querySelector('[data-meter="build"]');
-  if (buildCard) buildCard.classList.toggle("hidden", !buildOwned);
-  if (buildOwned) setMeter("build", health?.build.state ?? "not_yet");
-  setMeter("proof", health?.proof.state ?? "not_yet");
 
   const action = health?.nextAction;
   const review = state.improveReview;
   if (review?.files?.length) actionNotice = "";
   const canStop = action?.id === "stop-implement";
-  els.next.textContent =
-    actionBusy && !canStop && !review?.files?.length ? els.next.textContent : action?.label ?? "Create a requirement";
-  els.next.disabled = !action || !action.enabled || (actionBusy && !canStop && !review?.files?.length);
-  els.hint.textContent = review ? action?.hint || "" : actionNotice || action?.hint || "";
+  const nextEnabled = Boolean(action?.enabled) && !(actionBusy && !canStop && !review?.files?.length);
+  const nextLabel =
+    actionBusy && headerBusyLabel && !canStop && !review?.files?.length
+      ? headerBusyLabel
+      : action?.label ?? "Create a requirement";
+  paintActionButton(els.next, {
+    id: action?.id ?? "create",
+    label: nextLabel,
+    hint: review ? action?.hint || "" : actionNotice || action?.hint || "",
+    enabled: nextEnabled,
+    primary: true,
+    hidden: false,
+  });
   setStageButtons(health, action?.id);
 
   const needsNewPack = !packId;
   els.createBar.classList.toggle("hidden", !needsNewPack);
-  const repo = state.productRepo;
-  const needsStack = Boolean(repo?.root && repo.implement && repo.empty && !repo.recorded);
-  els.stackBar?.classList.toggle("hidden", !needsStack);
-  els.workspace.classList.toggle("hidden", needsNewPack && !state.markdown);
+  const gated = needsStackGate(state);
+  els.stackGate?.classList.toggle("hidden", !gated);
+  els.cockpitApp?.classList.toggle("hidden", gated);
+  els.next.hidden = gated;
+  if (els.hint) els.hint.hidden = true;
+  if (gated) return;
+
+  if (review && currentView !== "define") currentView = "define";
+  if (currentView === "implement" && health?.build?.owned === false) currentView = "define";
 
   if (!applying && !state.improveReview) {
     applying = true;
@@ -134,9 +160,14 @@ function render() {
     applying = false;
   }
 
+  renderPipeline();
+  renderStageNav();
+  showView(currentView);
   renderReview();
-  renderSections(state.markdown ?? "");
-  renderFindings(health?.spec.findings ?? [], health?.ready?.findings ?? [], health?.proof?.findings ?? []);
+  renderSpecPane();
+  renderJudgmentPane();
+  renderRunStatus();
+  renderProofReport();
   renderActivity();
 }
 
@@ -145,7 +176,6 @@ function renderReview() {
   const reviewing = Boolean(review);
   const hasDiff = Boolean(review?.files?.length);
   els.workspace?.classList.toggle("is-review", reviewing);
-  els.activityPanel?.classList.toggle("is-review-idle", reviewing);
   markdownEditor.setHidden(reviewing);
   if (els.save) els.save.classList.toggle("hidden", reviewing);
   if (!els.reviewActions || !els.reviewDiff) return;
@@ -156,8 +186,22 @@ function renderReview() {
     els.workspaceLabel.textContent = hasDiff ? "Improve patch" : reviewing ? "Waiting for the patch" : "requirement.md";
   }
   const lintOk = review?.lint?.ok !== false;
-  if (els.reviewAccept) els.reviewAccept.disabled = !hasDiff || !lintOk || actionBusy;
-  if (els.reviewReject) els.reviewReject.disabled = !reviewing || actionBusy;
+  paintActionButton(els.reviewAccept, {
+    id: "review-improve",
+    label: "Accept",
+    hint: lintOk ? "Apply the Improve patch to requirement.md." : (review?.lint?.messages ?? []).join(" "),
+    enabled: hasDiff && lintOk && !actionBusy,
+    primary: true,
+    hidden: !reviewing,
+  });
+  paintActionButton(els.reviewReject, {
+    id: "reject-improve",
+    label: "Reject",
+    hint: "Restore the snapshot and discard the patch.",
+    enabled: reviewing && !actionBusy,
+    primary: false,
+    hidden: !reviewing,
+  });
   if (!reviewing) {
     els.reviewDiff.innerHTML = "";
     return;
@@ -210,20 +254,109 @@ function escapeHtml(value) {
   })[char]);
 }
 
-function setMeter(name, value, labelText) {
-  const label = value.replaceAll("_", " ");
-  els[name].textContent = labelText ?? label.charAt(0).toUpperCase() + label.slice(1);
-  const card = document.querySelector(`[data-meter="${name}"]`);
-  if (card) card.dataset.state = value;
+function iconSvg(paths) {
+  return `<svg viewBox="0 0 16 16" aria-hidden="true">${paths}</svg>`;
+}
+
+function actionGlyph(id, label = "") {
+  if (id === "create") {
+    return iconSvg(
+      `<path d="M8 3.2v9.6M3.2 8h9.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`,
+    );
+  }
+  if (id === "fix-spec") {
+    return iconSvg(
+      `<path d="M3.2 12.8 6 12l6.4-6.4a1.6 1.6 0 0 0-2.2-2.2L3.8 9.8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>`,
+    );
+  }
+  if (id === "check-jev") {
+    return iconSvg(
+      `<circle cx="7.2" cy="7.2" r="3.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m9.8 9.8 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
+    );
+  }
+  if (id === "improve") {
+    return iconSvg(
+      `<path d="M8 2.6 9 6l3.4 1L9 8l-1 3.4L7 8 3.6 7 7 6zM12.4 10.2l.5 1.6 1.6.5-1.6.5-.5 1.6-.5-1.6-1.6-.5 1.6-.5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>`,
+    );
+  }
+  if (id === "review-improve") {
+    return iconSvg(
+      `<path d="M2.8 8.2 6.1 11.4 13.2 4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>`,
+    );
+  }
+  if (id === "reject-improve" || id === "stop-implement") {
+    return id === "stop-implement"
+      ? iconSvg(`<rect x="4.2" y="4.2" width="7.6" height="7.6" rx="1.2" fill="currentColor"/>`)
+      : iconSvg(
+          `<path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`,
+        );
+  }
+  if (id === "implement") {
+    return /rebuild/i.test(label)
+      ? iconSvg(
+          `<path d="M12.6 8A4.6 4.6 0 1 1 10.2 4.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M10 2.6v2.6h2.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
+        )
+      : iconSvg(
+          `<path d="M5.2 3.6v8.8L13 8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>`,
+        );
+  }
+  if (id === "ignore-build") {
+    return iconSvg(
+      `<path d="M3.2 4.4 8 8l-4.8 3.6zM8.8 4.4 13.6 8l-4.8 3.6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>`,
+    );
+  }
+  if (id === "prove") {
+    return iconSvg(
+      `<path d="M5.2 2.8h5.6L9.2 8.2v4.2l-2.4 1V8.2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>`,
+    );
+  }
+  if (id === "fix-from-proof") {
+    return iconSvg(
+      `<path d="M10.6 3.4a2.2 2.2 0 0 1 2 2.1c0 .6-.2 1.1-.6 1.5L7.4 11.6 4.4 12.6l1-3 4.6-4.6c.4-.4.9-.6 1.5-.6z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>`,
+    );
+  }
+  return iconSvg(
+    `<circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.5"/>`,
+  );
+}
+
+function paintActionButton(btn, { id, label, hint, enabled, primary, hidden }) {
+  if (!btn) return;
+  btn.hidden = Boolean(hidden);
+  btn.classList.toggle("hidden", Boolean(hidden));
+  if (hidden) return;
+  btn.disabled = false;
+  btn.dataset.enabled = enabled ? "1" : "0";
+  btn.dataset.action = id ?? "";
+  if (hint) btn.dataset.hint = hint;
+  else delete btn.dataset.hint;
+  btn.removeAttribute("title");
+  btn.setAttribute("aria-disabled", enabled ? "false" : "true");
+  btn.setAttribute("aria-label", hint ? `${label}. ${hint}` : label);
+  btn.classList.toggle("is-disabled", !enabled);
+  btn.classList.toggle("cta-primary", Boolean(primary && enabled));
+  btn.classList.toggle("cta-danger", id === "stop-implement" || id === "reject-improve");
+  btn.innerHTML = `${actionGlyph(id, label)}<span>${escapeHtml(label)}</span>`;
+}
+
+function setActionHint(message) {
+  if (els.next) {
+    if (message) els.next.dataset.hint = message;
+    else delete els.next.dataset.hint;
+  }
+}
+
+function setMeter() {
+  renderPipeline();
 }
 
 function readyLabel(ready) {
   if (!ready) return "Not yet";
-  const state = ready.state === "blocked" ? "Blocked" : ready.state === "ready" ? "Ready" : "Not yet";
+  const status = ready.state === "blocked" ? "Blocked" : ready.state === "ready" ? "Clear" : "Not yet";
   if (ready.jevCurrent && typeof ready.packNoul === "number") {
-    return `${state} · ${Number(ready.packNoul).toFixed(2)}`;
+    return `${status} · ${Number(ready.packNoul).toFixed(2)}`;
   }
-  return state;
+  return status;
 }
 
 function setStageButtons(health, primaryId) {
@@ -232,40 +365,505 @@ function setStageButtons(health, primaryId) {
   setStageButton(els.actionBuildIgnore, health?.stages?.ignoreBuild, primaryId);
   setStageButton(els.actionBuildStop, health?.stages?.stopImplement, primaryId);
   setStageButton(els.actionProof, health?.stages?.proof, primaryId);
+  setStageButton(els.actionFixProof, health?.stages?.fixFromProof, primaryId);
+  hideEmptyWorkspaceHeads();
+}
+
+function showView(view) {
+  currentView = view;
+  if (view === "spec" || view === "judgment") defineOpen = true;
+  const views = {
+    define: els.viewDefine,
+    spec: els.viewSpec,
+    judgment: els.viewJudgment,
+    implement: els.viewImplement,
+    qa: els.viewQa,
+  };
+  for (const [id, pane] of Object.entries(views)) {
+    if (!pane) continue;
+    const on = id === view;
+    pane.classList.toggle("hidden", !on);
+    pane.hidden = !on;
+  }
+}
+
+function renderPipeline() {
+  if (!els.graph) return;
+  const pipeline = state?.pipeline;
+  const nodes = (pipeline?.nodes ?? []).filter((node) => !node.hidden);
+  const signature = nodes
+    .map((node) => {
+      const kids = (node.id === "define" ? defineChildren(node) : [])
+        .map((child) => `${child.id}|${child.tone}|${child.badge ?? ""}|${currentView === child.view ? "1" : "0"}`)
+        .join(",");
+      return `${node.id}|${node.tone}|${node.badge ?? ""}|${currentView === node.view ? "1" : "0"}|${kids}`;
+    })
+    .join(";");
+  if (els.graph.dataset.sig === signature) {
+    paintPipelineRails();
+    return;
+  }
+  els.graph.dataset.sig = signature;
+  els.graph.innerHTML = "";
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.classList.add("pipeline-svg");
+  svg.setAttribute("aria-hidden", "true");
+  els.graph.append(svg);
+  const trunk = document.createElement("div");
+  trunk.className = "pipeline-trunk";
+  nodes.forEach((node) => {
+    const col = document.createElement("div");
+    col.className = "pipeline-col";
+    col.dataset.id = node.id;
+    col.append(makeGraphNode(node, node.id === "start" || node.id === "end"));
+    const children = node.id === "define" ? defineChildren(node) : [];
+    if (children.length) {
+      col.classList.add("has-children");
+      const branch = document.createElement("div");
+      branch.className = "pipeline-branch";
+      for (const child of children) {
+        branch.append(makeGraphNode(child, false));
+      }
+      col.append(branch);
+    }
+    trunk.append(col);
+  });
+  els.graph.append(trunk);
+  requestAnimationFrame(paintPipelineRails);
+}
+
+function paintPipelineRails() {
+  const graph = els.graph;
+  if (!graph) return;
+  const svg = graph.querySelector(".pipeline-svg");
+  if (!svg) return;
+  const box = graph.getBoundingClientRect();
+  const width = Math.max(1, Math.round(graph.clientWidth));
+  const height = Math.max(1, Math.round(graph.clientHeight));
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("width", String(width));
+  svg.setAttribute("height", String(height));
+  const center = (el) => {
+    const r = el.getBoundingClientRect();
+    return {
+      x: r.left + r.width / 2 - box.left + graph.scrollLeft,
+      y: r.top + r.height / 2 - box.top + graph.scrollTop,
+    };
+  };
+  const trunkDots = [...graph.querySelectorAll(".pipeline-col > .pipeline-node .pipeline-node-dot")];
+  const lines = [];
+  if (trunkDots.length >= 2) {
+    const first = center(trunkDots[0]);
+    const last = center(trunkDots[trunkDots.length - 1]);
+    lines.push(`<line x1="${first.x}" y1="${first.y}" x2="${last.x}" y2="${last.y}" />`);
+  }
+  const defineDot = graph.querySelector('.pipeline-node[data-id="define"] .pipeline-node-dot');
+  const childDots = [...graph.querySelectorAll(".pipeline-branch .pipeline-node-dot")];
+  if (defineDot && childDots.length) {
+    const parent = center(defineDot);
+    for (const kid of childDots.map(center)) {
+      const midY = parent.y + (kid.y - parent.y) / 2;
+      lines.push(
+        `<path d="M ${parent.x} ${parent.y} C ${parent.x} ${midY}, ${kid.x} ${midY}, ${kid.x} ${kid.y}" />`,
+      );
+    }
+  }
+  svg.innerHTML = lines.join("");
+}
+
+function makeGraphNode(node, terminal) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `pipeline-node${terminal ? " is-terminal" : ""}`;
+  btn.dataset.tone = node.tone;
+  btn.dataset.view = node.view;
+  btn.dataset.id = node.id;
+  btn.classList.toggle("is-active", currentView === node.view && node.id !== "start" && node.id !== "end");
+  btn.title = node.badge ? `${node.label} — ${node.badge}` : node.label;
+  btn.innerHTML = `<span class="pipeline-node-label">${escapeHtml(node.label)}</span><span class="pipeline-node-dot">${toneGlyph(node.tone)}</span>`;
+  btn.addEventListener("click", () => {
+    if (node.id === "start" && !state?.packId) {
+      els.createBar?.classList.remove("hidden");
+      els.newId?.focus();
+      return;
+    }
+    showView(node.view);
+    renderStageNav();
+    renderPipeline();
+  });
+  return btn;
+}
+
+function defineChildren(node) {
+  if (node?.children?.length) return node.children;
+  const specState = state?.health?.spec?.state ?? "empty";
+  const ready = state?.health?.ready;
+  const specTone =
+    specState === "empty" ? "idle" : specState === "drafting" ? "draft" : specState === "valid" ? "ok" : "draft";
+  const specBadge =
+    specState === "empty" ? "Empty" : specState === "drafting" ? "Drafting" : specState === "valid" ? "Valid" : specState;
+  const judgmentTone =
+    ready?.state === "blocked" ? "bad" : ready?.state === "ready" ? "ok" : specState === "valid" ? "draft" : "idle";
+  return [
+    { id: "spec", label: "Spec", view: "spec", tone: specTone, badge: specBadge },
+    { id: "judgment", label: "Judgment", view: "judgment", tone: judgmentTone, badge: ready ? readyLabel(ready) : "Not yet" },
+  ];
+}
+
+function toneGlyph(tone) {
+  if (tone === "ok") {
+    return `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.4 6.3 4.9 8.7 9.6 3.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  }
+  if (tone === "bad") {
+    return `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.2 3.2 8.8 8.8M8.8 3.2 3.2 8.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+  }
+  return "";
+}
+
+function renderStageNav() {
+  if (!els.stageNav) return;
+  const owned = state?.pipeline?.implementOwned !== false && state?.health?.build?.owned !== false;
+  const byId = Object.fromEntries((state?.pipeline?.nodes ?? []).map((node) => [node.id, node]));
+  const defineKids = defineChildren(byId.define);
+  const items = [
+    { view: "define", label: "Define", child: false, tone: byId.define?.tone ?? "idle", badge: byId.define?.badge },
+    ...defineKids.map((child) => ({
+      view: child.view,
+      label: child.label,
+      child: true,
+      tone: child.tone,
+      badge: child.badge,
+    })),
+    ...(owned
+      ? [{ view: "implement", label: "Implement", child: false, tone: byId.implement?.tone ?? "idle", badge: byId.implement?.badge }]
+      : []),
+    { view: "qa", label: "QA", child: false, tone: byId.qa?.tone ?? "idle", badge: byId.qa?.badge },
+  ];
+  const signature = items
+    .map((item) => `${item.view}|${item.child ? "1" : "0"}|${item.tone}|${item.badge ?? ""}|${currentView === item.view ? "1" : "0"}`)
+    .join(";") + `|define:${defineOpen ? "1" : "0"}`;
+  if (els.stageNav.dataset.sig === signature) return;
+  els.stageNav.dataset.sig = signature;
+  els.stageNav.innerHTML = "";
+  for (const item of items) {
+    if (item.child && !defineOpen) continue;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `nav-item${item.child ? " stage-nav-child" : ""}`;
+    btn.dataset.tone = item.tone;
+    btn.classList.toggle("active", currentView === item.view);
+    if (item.view === "define") {
+      btn.classList.toggle("is-open", defineOpen);
+      btn.setAttribute("aria-expanded", defineOpen ? "true" : "false");
+    }
+    btn.innerHTML = `<span class="nav-mark">${toneGlyph(item.tone)}</span><span class="nav-name">${escapeHtml(item.label)}</span>${
+      item.badge ? `<span class="nav-badge">${escapeHtml(item.badge)}</span>` : ""
+    }${item.view === "define" ? `<span class="nav-chevron" aria-hidden="true"></span>` : ""}`;
+    btn.addEventListener("click", (event) => {
+      if (item.view === "define" && event.target.closest(".nav-chevron")) {
+        defineOpen = !defineOpen;
+        renderStageNav();
+        return;
+      }
+      if (item.view === "spec" || item.view === "judgment") defineOpen = true;
+      showView(item.view);
+      renderStageNav();
+      renderPipeline();
+    });
+    els.stageNav.append(btn);
+  }
 }
 
 function setStageButton(btn, action, primaryId) {
-  if (!btn) return;
-  if (!action || action.hidden) {
-    btn.hidden = true;
-    return;
-  }
-  btn.hidden = false;
-  btn.textContent = action.label;
-  const keepEnabled = action.id === "stop-implement";
-  btn.disabled = !action.enabled || (actionBusy && !keepEnabled);
-  btn.dataset.action = action.id;
-  btn.title = action.hint ?? "";
-  btn.classList.toggle("pill-btn-primary", Boolean(action.enabled && action.id === primaryId));
+  const keepEnabled = action?.id === "stop-implement";
+  paintActionButton(btn, {
+    id: action?.id,
+    label: action?.label ?? "",
+    hint: action?.hint ?? "",
+    enabled: Boolean(action?.enabled) && (!actionBusy || keepEnabled),
+    primary: Boolean(action?.enabled && action.id === primaryId),
+    hidden: !action || action.hidden,
+  });
 }
 
-function renderSections(markdown) {
-  const names = [...markdown.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1]);
-  const unique = names.length ? names : ["Business Rules", "Use Cases", "Roles & Permissions"];
-  els.sections.innerHTML = "";
-  for (const name of unique) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = name;
-    btn.className = "nav-item";
-    btn.classList.toggle("active", name === focusedSection);
-    btn.addEventListener("click", () => {
-      focusedSection = name;
-      jumpToSection(name);
-      renderSections(markdownEditor.getValue());
-    });
-    els.sections.append(btn);
+function headingPresent(markdown, name) {
+  return new RegExp(`^##\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "m").test(markdown);
+}
+
+function statusIcon(name) {
+  if (name === "clock") {
+    return `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 5.2v3.1l2.1 1.3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
   }
+  if (name === "compile") {
+    return `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 2.6h5.2L12 5.2v8.2H4.2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M9.2 2.6v2.8H12M6 8.2h4.2M6 10.6h3.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+  }
+  if (name === "list") {
+    return `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 4.4h9.6M3.2 8h9.6M3.2 11.6h6.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  }
+  if (name === "monitor") {
+    return `<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.4" y="3.2" width="11.2" height="7.4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6.2 13h3.6M8 10.6V13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+  }
+  return `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>`;
+}
+
+function statusMark(tone) {
+  const glyph = toneGlyph(tone);
+  return glyph || `<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`;
+}
+
+function renderStatusBar(el, { tone, title, items }) {
+  if (!el) return;
+  const meta = items.filter((item) => item?.text);
+  const sig = `${tone}|${title}|${meta.map((item) => `${item.icon}:${item.text}`).join(";")}`;
+  if (el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
+  el.dataset.tone = tone;
+  el.innerHTML = `<span class="status-bar-lead"><span class="status-bar-mark">${statusMark(tone)}</span><span class="status-bar-title">${escapeHtml(
+    title,
+  )}</span></span><span class="status-bar-meta">${meta
+    .map(
+      (item) =>
+        `<span class="status-bar-item"><span class="status-bar-icon">${statusIcon(item.icon)}</span><span>${escapeHtml(
+          item.text,
+        )}</span></span>`,
+    )
+    .join("")}</span>`;
+}
+
+function hideEmptyWorkspaceHeads() {
+  for (const head of document.querySelectorAll(".workspace-head")) {
+    const actions = head.querySelector(".stage-actions");
+    if (!actions) continue;
+    const visible = [...actions.querySelectorAll("button")].some((btn) => !btn.hidden);
+    actions.classList.toggle("hidden", !visible);
+    if (!head.querySelector(".editor-label")) head.classList.toggle("hidden", !visible);
+  }
+}
+
+function renderSpecPane() {
+  if (!els.specSections) return;
+  const markdown = state?.markdown ?? markdownEditor.getValue();
+  const spec = state?.health?.spec;
+  const findings = spec?.findings ?? [];
+  const specState = spec?.state ?? "empty";
+  const label = specState === "valid" ? "Valid" : specState === "drafting" ? "Drafting" : "Empty";
+  const specTone =
+    specState === "valid" ? "ok" : findings.some((f) => f.severity === "error") ? "bad" : specState === "drafting" ? "draft" : "idle";
+  renderStatusBar(els.specStatus, {
+    tone: specTone,
+    title: "Spec",
+    items: [
+      { icon: "clock", text: label },
+      { icon: "compile", text: "compile" },
+      {
+        icon: "list",
+        text: findings.length
+          ? `${findings.length} finding${findings.length === 1 ? "" : "s"}`
+          : "No findings",
+      },
+    ],
+  });
+  const catalog = state?.sections ?? [];
+  els.specSections.innerHTML = "";
+  for (const section of catalog) {
+    const present = headingPresent(markdown, section.name);
+    const errored = findings.some((f) => f.message.includes(section.name));
+    const status = errored ? "error" : present ? "present" : "missing";
+    const li = document.createElement("li");
+    li.className = "list-row spec-section";
+    li.dataset.status = status;
+    li.innerHTML = `<div class="spec-section-head"><span class="spec-section-name">${escapeHtml(section.name)}</span><span class="spec-section-mark">${status}</span></div><p class="spec-section-purpose">${escapeHtml(section.purpose)}${section.required ? " Required." : " Optional."}</p>`;
+    li.addEventListener("click", () => {
+      focusedSection = section.name;
+      openDefine();
+      jumpToSection(section.name);
+    });
+    els.specSections.append(li);
+  }
+
+  if (!els.specFindings) return;
+  els.specFindings.innerHTML = "";
+  if (!findings.length) {
+    const li = document.createElement("li");
+    li.className = "list-row list-row-ok";
+    li.textContent = specState === "valid" ? "Grammar is valid." : "No compile findings.";
+    els.specFindings.append(li);
+    return;
+  }
+  for (const f of findings) {
+    const li = document.createElement("li");
+    li.className = "list-row list-row-bad";
+    li.textContent = f.line ? `L${f.line} ${f.message}` : f.message;
+    if (f.line) {
+      li.addEventListener("click", () => {
+        openDefine();
+        jumpToLine(f.line);
+      });
+    }
+    els.specFindings.append(li);
+  }
+}
+
+function renderJudgmentPane() {
+  const ready = state?.health?.ready;
+  const judgmentTone =
+    ready?.state === "blocked" ? "bad" : ready?.state === "ready" ? "ok" : state?.health?.spec?.state === "valid" ? "draft" : "idle";
+  const blockers = ready?.blockers ?? 0;
+  const nits = ready?.nits ?? 0;
+  renderStatusBar(els.judgmentBadge, {
+    tone: judgmentTone,
+    title: "Judgment",
+    items: [
+      { icon: "clock", text: readyLabel(ready) },
+      ...(ready && (blockers || nits)
+        ? [{ icon: "list", text: `${blockers} blocker${blockers === 1 ? "" : "s"}, ${nits} nit${nits === 1 ? "" : "s"}` }]
+        : [{ icon: "list", text: ready?.state === "ready" ? "No findings" : "Not checked" }]),
+    ],
+  });
+  if (!els.judgmentFindings) return;
+  const findings = state?.health?.ready?.findings ?? [];
+  els.judgmentFindings.innerHTML = "";
+  if (!findings.length) {
+    const li = document.createElement("li");
+    li.className = "list-row list-row-ok";
+    li.textContent = state?.health?.ready?.state === "ready" ? "Clear. No Judgment findings." : "No Judgment findings yet. Check when Spec is valid.";
+    els.judgmentFindings.append(li);
+    return;
+  }
+  for (const f of findings) {
+    const li = document.createElement("li");
+    li.className = f.severity === "blocker" ? "list-row list-row-bad" : "list-row list-row-nit";
+    li.textContent = f.specId ? `${f.specId} — ${f.message}` : f.message;
+    li.addEventListener("click", () => {
+      openDefine();
+      if (f.line) jumpToLine(f.line);
+      else jumpToSpecId(f.specId);
+    });
+    els.judgmentFindings.append(li);
+  }
+}
+
+function renderRunStatus() {
+  const build = state?.health?.build;
+  const buildLabel =
+    build?.state === "running"
+      ? "Implementing"
+      : build?.state === "succeeded"
+        ? "Succeeded"
+        : build?.state === "failed"
+          ? "Failed"
+          : build?.state === "stale"
+            ? "Stale"
+            : "Not yet";
+  const buildTone =
+    build?.state === "succeeded"
+      ? "ok"
+      : build?.state === "failed"
+        ? "bad"
+        : build?.state === "running"
+          ? "progress"
+          : build?.state === "stale"
+            ? "draft"
+            : "idle";
+  renderStatusBar(els.implementStatus, {
+    tone: buildTone,
+    title: "Implement",
+    items: [
+      { icon: "clock", text: buildLabel },
+      ...(build?.ignored ? [{ icon: "list", text: "Ignored" }] : []),
+      ...(build?.adapter ? [{ icon: "monitor", text: build.adapter === "cursor" ? "Cursor" : "Manual" }] : []),
+    ],
+  });
+
+  const proof = state?.health?.proof;
+  const proofLabel =
+    proof?.state === "passed"
+      ? "Passed"
+      : proof?.state === "failed"
+        ? "Failed"
+        : proof?.state === "needs_review"
+          ? "Needs review"
+          : proof?.state === "stale"
+            ? "Stale"
+            : "Not yet";
+  const proofTone =
+    proof?.state === "passed"
+      ? "ok"
+      : proof?.state === "failed"
+        ? "bad"
+        : proof?.state === "needs_review" || proof?.state === "stale"
+          ? "draft"
+          : "idle";
+  const counts = [];
+  if (typeof proof?.passed === "number") counts.push(`${proof.passed} passed`);
+  if (typeof proof?.failed === "number" && proof.failed) counts.push(`${proof.failed} failed`);
+  if (typeof proof?.review === "number" && proof.review) counts.push(`${proof.review} review`);
+  renderStatusBar(els.qaStatus, {
+    tone: proofTone,
+    title: "QA",
+    items: [
+      { icon: "clock", text: proofLabel },
+      { icon: "list", text: counts.length ? counts.join(", ") : proof?.runtime ? "runtime ready" : "No runtime" },
+    ],
+  });
+}
+
+function renderProofReport() {
+  if (!els.proofReport) return;
+  const report = state?.proofReport?.trim();
+  if (!report) {
+    els.proofReport.className = "list-rows";
+    els.proofReport.innerHTML = `<div class="list-row list-row-idle">No proof report yet. Prove writes derived/proof-report.md here.</div>`;
+    return;
+  }
+  els.proofReport.className = "proof-report md-preview";
+  els.proofReport.innerHTML = renderProofMarkdown(report);
+}
+
+function renderProofMarkdown(source) {
+  const blocks = [];
+  let list = [];
+  const flushList = () => {
+    if (!list.length) return;
+    blocks.push(`<ul>${list.map((item) => `<li>${inlineMd(item)}</li>`).join("")}</ul>`);
+    list = [];
+  };
+  for (const raw of source.split("\n")) {
+    const line = raw.trimEnd();
+    if (/^###\s+/.test(line)) {
+      flushList();
+      blocks.push(`<h3>${inlineMd(line.replace(/^###\s+/, ""))}</h3>`);
+    } else if (/^##\s+/.test(line)) {
+      flushList();
+      blocks.push(`<h2>${inlineMd(line.replace(/^##\s+/, ""))}</h2>`);
+    } else if (/^#\s+/.test(line)) {
+      flushList();
+      blocks.push(`<h1>${inlineMd(line.replace(/^#\s+/, ""))}</h1>`);
+    } else if (/^[-*]\s+/.test(line)) {
+      list.push(line.replace(/^[-*]\s+/, ""));
+    } else if (!line.trim()) {
+      flushList();
+    } else {
+      flushList();
+      blocks.push(`<p>${inlineMd(line)}</p>`);
+    }
+  }
+  flushList();
+  return blocks.join("");
+}
+
+function inlineMd(value) {
+  return escapeHtml(value).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+function openView(view) {
+  showView(view);
+  renderStageNav();
+  renderPipeline();
+}
+
+function openDefine() {
+  openView("define");
 }
 
 function jumpToSection(name) {
@@ -286,68 +884,35 @@ function jumpToSpecId(id) {
   return false;
 }
 
-function renderFindings(specFindings, readyFindings, proofFindings = []) {
-  els.findings.innerHTML = "";
-  if (!specFindings.length && !readyFindings.length && !proofFindings.length) {
-    const li = document.createElement("li");
-    li.className = "list-row list-row-ok";
-    li.textContent = "No findings.";
-    els.findings.append(li);
-    return;
-  }
-  for (const f of specFindings) {
-    const li = document.createElement("li");
-    li.className = "list-row list-row-bad";
-    li.textContent = `L${f.line} ${f.message}`;
-    if (f.line) li.addEventListener("click", () => jumpToLine(f.line));
-    els.findings.append(li);
-  }
-  for (const f of readyFindings) {
-    const li = document.createElement("li");
-    li.className = f.severity === "blocker" ? "list-row list-row-bad" : "list-row list-row-nit";
-    li.textContent = f.specId ? `${f.specId} — ${f.message}` : f.message;
-    li.addEventListener("click", () => {
-      if (f.line) jumpToLine(f.line);
-      else jumpToSpecId(f.specId);
-    });
-    els.findings.append(li);
-  }
-  for (const f of proofFindings) {
-    const li = document.createElement("li");
-    li.className = f.severity === "fail" ? "list-row list-row-bad" : "list-row list-row-nit";
-    li.textContent = f.specId ? `${f.specId} — ${f.message}` : f.message;
-    li.addEventListener("click", () => jumpToSpecId(f.specId));
-    els.findings.append(li);
-  }
-}
-
 function renderActivity() {
-  if (!els.activity) return;
+  const logs = [els.implementActivity, els.qaActivity].filter(Boolean);
+  if (!logs.length) return;
   const lines = activityLines.length
     ? activityLines
     : [{ level: "info", message: "No activity yet. Implement and Prove write progress here." }];
   const key = lines.map((line) => `${line.level}\0${line.message}`).join("\n");
-  const log = els.activity;
-  const pinned = log.scrollHeight - log.scrollTop - log.clientHeight < 16;
-  const savedTop = log.scrollTop;
-  if (key === lastActivityKey && log.childElementCount === lines.length) return;
+  if (key === lastActivityKey && logs.every((log) => log.childElementCount === lines.length)) return;
   lastActivityKey = key;
-  log.innerHTML = "";
-  for (const line of lines) {
-    const li = document.createElement("li");
-    const kind = line.level === "error" ? "bad" : line.level === "ok" ? "ok" : "idle";
-    li.className = `list-row list-row-${kind}`;
-    li.textContent = line.message;
-    log.append(li);
+  for (const log of logs) {
+    const pinned = log.scrollHeight - log.scrollTop - log.clientHeight < 16;
+    const savedTop = log.scrollTop;
+    log.innerHTML = "";
+    for (const line of lines) {
+      const li = document.createElement("li");
+      const kind = line.level === "error" ? "bad" : line.level === "ok" ? "ok" : "idle";
+      li.className = `list-row list-row-${kind}`;
+      li.textContent = line.message;
+      log.append(li);
+    }
+    log.scrollTop = pinned ? log.scrollHeight : savedTop;
   }
-  log.scrollTop = pinned ? log.scrollHeight : savedTop;
 }
 
 function appendActivity(line) {
   activityLines = [...activityLines, line].slice(-80);
   if (line.message) {
     actionNotice = line.message;
-    els.hint.textContent = line.message;
+    setActionHint(line.message);
   }
   renderActivity();
 }
@@ -361,7 +926,9 @@ function jumpToLine(line) {
 }
 
 function selectInEditor(start, end) {
-  markdownEditor.select(start, end);
+  requestAnimationFrame(() => {
+    markdownEditor.select(start, end);
+  });
 }
 
 async function saveMarkdown() {
@@ -382,22 +949,31 @@ async function saveMarkdown() {
   }
 }
 
-els.reviewAccept?.addEventListener("click", () => {
+function onEnabledClick(btn, fn) {
+  btn?.addEventListener("click", (event) => {
+    if (btn.dataset.enabled === "0") {
+      event.preventDefault();
+      return;
+    }
+    fn();
+  });
+}
+
+onEnabledClick(els.reviewAccept, () => {
   void runNextAction("Accepting…", "/api/improve/accept");
 });
-els.reviewReject?.addEventListener("click", () => {
+onEnabledClick(els.reviewReject, () => {
   void runNextAction("Rejecting…", "/api/improve/reject");
 });
-
-els.next.addEventListener("click", () => {
+onEnabledClick(els.next, () => {
   void runStageAction(state.health?.nextAction?.id);
 });
-
-els.actionReady?.addEventListener("click", () => void runStageAction(els.actionReady.dataset.action));
-els.actionBuild?.addEventListener("click", () => void runStageAction(els.actionBuild.dataset.action));
-els.actionBuildIgnore?.addEventListener("click", () => void runStageAction(els.actionBuildIgnore.dataset.action));
-els.actionBuildStop?.addEventListener("click", () => void runStageAction(els.actionBuildStop.dataset.action));
-els.actionProof?.addEventListener("click", () => void runStageAction(els.actionProof.dataset.action));
+onEnabledClick(els.actionReady, () => void runStageAction(els.actionReady.dataset.action));
+onEnabledClick(els.actionBuild, () => void runStageAction(els.actionBuild.dataset.action));
+onEnabledClick(els.actionBuildIgnore, () => void runStageAction(els.actionBuildIgnore.dataset.action));
+onEnabledClick(els.actionBuildStop, () => void runStageAction(els.actionBuildStop.dataset.action));
+onEnabledClick(els.actionProof, () => void runStageAction(els.actionProof.dataset.action));
+onEnabledClick(els.actionFixProof, () => void runStageAction(els.actionFixProof.dataset.action));
 els.ignoreYes?.addEventListener("click", () => closeIgnoreDialog("yes"));
 els.ignoreNo?.addEventListener("click", () => closeIgnoreDialog("no"));
 els.ignoreCancel?.addEventListener("click", () => closeIgnoreDialog("cancel"));
@@ -425,8 +1001,20 @@ function askIgnoreBuild() {
   });
 }
 
+function viewForAction(id) {
+  if (id === "check-jev") return "judgment";
+  if (id === "improve" || id === "review-improve" || id === "fix-spec" || id === "create") return "define";
+  if (id === "implement" || id === "stop-implement" || id === "ignore-build" || id === "fix-from-proof") {
+    return state?.health?.build?.owned === false ? null : "implement";
+  }
+  if (id === "prove") return "qa";
+  return null;
+}
+
 async function runStageAction(id) {
   actionNotice = "";
+  const nextView = viewForAction(id);
+  if (nextView) openView(nextView);
   if (id === "create") {
     if (!state.packId) {
       els.createBar.classList.remove("hidden");
@@ -448,7 +1036,7 @@ async function runStageAction(id) {
   if (id === "improve") {
     activityLines = [{ level: "info", message: "Improve started." }];
     actionNotice = "Writing the improve brief…";
-    els.hint.textContent = actionNotice;
+    setActionHint(actionNotice);
     renderActivity();
     await runBackgroundAction("Improving…", "/api/improve", { adapter: "cursor" }, "improve");
     return;
@@ -463,7 +1051,7 @@ async function runStageAction(id) {
   }
   if (id === "stop-implement") {
     actionNotice = "Stopping…";
-    els.hint.textContent = actionNotice;
+    setActionHint(actionNotice);
     try {
       const res = await fetch("/api/stop-implement", {
         method: "POST",
@@ -477,7 +1065,7 @@ async function runStageAction(id) {
     } catch (err) {
       actionNotice = err instanceof Error ? err.message : "Stop failed.";
     }
-    els.hint.textContent = actionNotice;
+    setActionHint(actionNotice);
     render();
     return;
   }
@@ -486,7 +1074,7 @@ async function runStageAction(id) {
     actionNotice = "Implement started.";
     setMeter("build", "running");
     renderActivity();
-    els.hint.textContent = actionNotice;
+    setActionHint(actionNotice);
     await runBackgroundAction("Implementing…", "/api/implement", { adapter: "cursor" }, "implement");
     return;
   }
@@ -494,7 +1082,7 @@ async function runStageAction(id) {
     const successful = await askIgnoreBuild();
     if (successful === null) return;
     actionNotice = "Ignoring failed Build…";
-    els.hint.textContent = actionNotice;
+    setActionHint(actionNotice);
     const ignored = await runNextAction("Ignoring…", "/api/ignore-build", { successful });
     if (ignored === false) return;
     await runProveAction();
@@ -505,7 +1093,7 @@ async function runStageAction(id) {
     actionNotice = "Fix from proof started.";
     setMeter("build", "running");
     renderActivity();
-    els.hint.textContent = actionNotice;
+    setActionHint(actionNotice);
     await runBackgroundAction(
       "Fixing from proof…",
       "/api/implement",
@@ -519,15 +1107,21 @@ async function runStageAction(id) {
     actionNotice = "Prove started.";
     setMeter("proof", "running");
     renderActivity();
-    els.hint.textContent = actionNotice;
+    setActionHint(actionNotice);
     await runProveAction();
   }
 }
 
 async function runProveAction() {
   actionBusy = true;
-  els.next.disabled = true;
-  els.next.textContent = "Proving…";
+  headerBusyLabel = "Proving…";
+  paintActionButton(els.next, {
+    id: "prove",
+    label: headerBusyLabel,
+    hint: actionNotice,
+    enabled: false,
+    primary: true,
+  });
   const poll = window.setInterval(() => {
     void refreshActivity();
   }, 750);
@@ -544,14 +1138,14 @@ async function runProveAction() {
     }
     if (!res.ok && !payload.started) {
       actionNotice = payload.error ?? "Prove failed.";
-      els.hint.textContent = actionNotice;
+      setActionHint(actionNotice);
       return;
     }
     await waitWhileBusy("prove");
     await load();
   } catch (err) {
     actionNotice = err instanceof Error ? err.message : "Failed to fetch";
-    els.hint.textContent = actionNotice;
+    setActionHint(actionNotice);
     await refreshActivity();
     await waitWhileBusy("prove");
     await load();
@@ -578,7 +1172,7 @@ async function waitWhileBusy(kind) {
       const last = activityLines[activityLines.length - 1];
       if (last?.message && !data.improveReview) {
         actionNotice = last.message;
-        els.hint.textContent = last.message;
+        setActionHint(last.message);
       }
       render();
       if (data.busy !== kind) return;
@@ -600,7 +1194,7 @@ async function refreshActivity() {
       const last = activityLines[activityLines.length - 1];
       if (last?.message) {
         actionNotice = last.message;
-        els.hint.textContent = last.message;
+        setActionHint(last.message);
       }
     }
     render();
@@ -611,8 +1205,14 @@ async function refreshActivity() {
 
 async function runBackgroundAction(busyLabel, url, body, kind) {
   actionBusy = true;
-  els.next.disabled = true;
-  els.next.textContent = busyLabel;
+  headerBusyLabel = busyLabel;
+  paintActionButton(els.next, {
+    id: state.health?.nextAction?.id,
+    label: busyLabel,
+    hint: actionNotice,
+    enabled: false,
+    primary: true,
+  });
   setStageButtons(state.health, state.health?.nextAction?.id);
   const poll = window.setInterval(() => {
     void refreshActivity();
@@ -631,12 +1231,12 @@ async function runBackgroundAction(busyLabel, url, body, kind) {
     }
     if (!res.ok && !payload.started) {
       actionNotice = payload.error ?? "Request failed.";
-      els.hint.textContent = actionNotice;
+      setActionHint(actionNotice);
       return;
     }
     if (payload.message) {
       actionNotice = payload.message;
-      els.hint.textContent = actionNotice;
+      setActionHint(actionNotice);
     }
     if (payload.started || payload.busy === kind) {
       await waitWhileBusy(kind);
@@ -644,7 +1244,7 @@ async function runBackgroundAction(busyLabel, url, body, kind) {
     }
   } catch (err) {
     actionNotice = err instanceof Error ? err.message : "Request failed.";
-    els.hint.textContent = actionNotice;
+    setActionHint(actionNotice);
     await refreshActivity();
     await waitWhileBusy(kind);
     await load();
@@ -657,8 +1257,14 @@ async function runBackgroundAction(busyLabel, url, body, kind) {
 
 async function runNextAction(busyLabel, url, body) {
   actionBusy = true;
-  els.next.disabled = true;
-  els.next.textContent = busyLabel;
+  headerBusyLabel = busyLabel;
+  paintActionButton(els.next, {
+    id: state.health?.nextAction?.id,
+    label: busyLabel,
+    hint: actionNotice,
+    enabled: false,
+    primary: true,
+  });
   setStageButtons(state.health, state.health?.nextAction?.id);
   try {
     const res = await fetch(url, {
@@ -689,6 +1295,8 @@ async function runNextAction(busyLabel, url, body) {
 
 async function recordStack(id) {
   if (els.stackError) els.stackError.textContent = "";
+  if (els.stackNextjs) els.stackNextjs.disabled = true;
+  if (els.stackAmplify) els.stackAmplify.disabled = true;
   const res = await fetch("/api/stack", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -696,6 +1304,8 @@ async function recordStack(id) {
   });
   const body = await res.json();
   if (!res.ok) {
+    if (els.stackNextjs) els.stackNextjs.disabled = false;
+    if (els.stackAmplify) els.stackAmplify.disabled = false;
     if (els.stackError) els.stackError.textContent = body.error ?? "Could not record stack.";
     return;
   }
@@ -751,6 +1361,12 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("pagehide", stopPolling);
 window.addEventListener("beforeunload", stopPolling);
+
+if (els.graph) {
+  const redraw = () => paintPipelineRails();
+  new ResizeObserver(redraw).observe(els.graph);
+  window.addEventListener("resize", redraw);
+}
 
 void load().finally(() => {
   if (document.visibilityState === "visible") startPolling();

@@ -1,4 +1,6 @@
-# Req0
+<p align="center">
+  <img src="docs/brand/req0-logo-stacked.png" alt="Req0" width="220" />
+</p>
 
 A requirement operating system: structured packs, a local Requirement Owner cockpit, Jev judgments, coding-agent implementation, and browser proof.
 

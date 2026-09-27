@@ -16,6 +16,7 @@ import {
 } from "./improve-review.js";
 import type { LaunchAdapterResult } from "./implement.js";
 import { inspectProductRepo, recordStack, UnknownStackError } from "./stack.js";
+import { pipelineView, sectionCatalog } from "./stages.js";
 import type { PackPaths } from "./pack.js";
 import type { ActivityLevel, ActivityLine, CompileResult } from "./types.js";
 
@@ -405,6 +406,14 @@ async function snapshot(state: AppState) {
     pushActivity(state, "Improve patch ready to review.", "ok");
   }
   const health = state.last ? applyImproveReviewGate(state.last.health, improveReview) : null;
+  let proofReport = "";
+  if (state.pack) {
+    try {
+      proofReport = await readFile(state.pack.proofReport, "utf8");
+    } catch {
+      proofReport = "";
+    }
+  }
   return {
     cwd: state.cwd,
     packId: state.pack?.id ?? null,
@@ -413,6 +422,9 @@ async function snapshot(state: AppState) {
     markdown: state.last?.markdown ?? "",
     health,
     spec: state.last?.spec ?? null,
+    pipeline: pipelineView(health, Boolean(state.pack)),
+    sections: sectionCatalog(),
+    proofReport,
     hasApiKey: hasJevAccess(),
     productRepo: state.pack ? await inspectProductRepo(state.pack.root) : null,
     activity: state.activity,
@@ -547,6 +559,7 @@ function contentType(file: string): string {
   if (file.endsWith(".css")) return "text/css; charset=utf-8";
   if (file.endsWith(".js")) return "text/javascript; charset=utf-8";
   if (file.endsWith(".svg")) return "image/svg+xml";
+  if (file.endsWith(".png")) return "image/png";
   return "text/html; charset=utf-8";
 }
 

@@ -223,9 +223,19 @@ export function createMarkdownEditor(parent, options = {}) {
       const end = Math.max(start, Math.min(to, max));
       view.dispatch({
         selection: EditorSelection.range(start, end),
-        scrollIntoView: true,
+        effects: EditorView.scrollIntoView(start, { y: "start", yMargin: 8 }),
       });
-      view.focus();
+      const pinBelowToolbar = () => {
+        const coords = view.coordsAtPos(start);
+        if (!coords) return;
+        const desiredTop = toolbar.getBoundingClientRect().bottom + 8;
+        const delta = coords.top - desiredTop;
+        if (Math.abs(delta) > 1) {
+          window.scrollBy({ top: delta, left: 0, behavior: "auto" });
+        }
+      };
+      requestAnimationFrame(() => requestAnimationFrame(pinBelowToolbar));
+      view.focus({ preventScroll: true });
     },
     focus() {
       if (mode === "preview") setMode("edit");

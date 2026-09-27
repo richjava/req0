@@ -13,7 +13,7 @@ Milestone 2+ screens reuse these classes. Do not invent a second chrome.
 - Themes are data: `html[data-theme="light"]` today. Dark token values exist on `[data-theme="dark"]` but are **not wired** (no toggle).
 - Components reference semantic names (`--surface-2`, `--text-primary`), never raw hex.
 - Sans-serif UI (Inter). Monospace only in `requirement.md`
-- Purple primary actions, status pills, compact 12–16px type
+- Purple primary actions, pipeline node tones from `--color-status-*`, compact 12–16px type
 - No Storybook, Tailwind, shadcn, or React rewrite
 
 ## Surface layers
@@ -21,7 +21,7 @@ Milestone 2+ screens reuse these classes. Do not invent a second chrome.
 | Layer | Token | Light role |
 | --- | --- | --- |
 | 0 | `--surface-0` | Page canvas (recessed gray) |
-| 1 | `--surface-1` | Chrome: sidebar, flush bars |
+| 1 | `--surface-1` | Chrome: nested stage nav, flush bars |
 | 2 | `--surface-2` | Raised panels / cards (`--shadow-2`) |
 | 3 | `--surface-3` | Inset fields and nested rows |
 
@@ -36,7 +36,7 @@ To ship dark later: fill in more `[data-theme="dark"]` if needed, then set `data
 | `--color-primary` | `#7b68ee` | Primary button, active nav |
 | `--color-primary-hover` | `#6647f0` | Hover |
 | `--color-status-idle` | gray | Not yet |
-| `--color-status-draft` | amber | Drafting / empty spec |
+| `--color-status-draft` | purple | Drafting / not yet |
 | `--color-status-ok` | green | Valid / pass |
 | `--color-status-bad` | red | Error |
 | `--color-status-progress` | purple | In progress (later) |
@@ -47,16 +47,22 @@ Space: `--space-1` … `--space-6` (4px grid). Radius: 8px controls, 12px panels
 
 | Class | Role |
 | --- | --- |
-| `.app-shell` | Sidebar + main |
-| `.sidebar` / `.nav-item` / `.nav-item.active` | Navigation on `--surface-1` |
-| `.topbar` / `.btn-primary` / `.btn-secondary` | Header actions |
-| `.status-pill` + `data-state` | Meters |
+| `.app-shell` | Single-column canvas |
+| `.pipeline` / `.pipeline-graph` / `.pipeline-svg` / `.pipeline-node` / `.pipeline-branch` | Flush circle-and-rail graph. SVG draws one rail and the Define bracket. Labels sit above dots. Node `data-tone` is idle / draft / ok / bad / progress |
+| `.stage-workspace` / `.stage-nav` / `.nav-mark` / `.nav-badge` / `.nav-chevron` / `.stage-view` | Status tree + content. Define starts open; chevron collapses Spec / Judgment. Selected row uses `--surface-hover`, no purple inset |
+| `.topbar` / `.logo-horiz` / `.btn-primary` / `.btn-secondary` / `.cta` | Header: horizontal wordmark, pack copy, primary action. CTAs use an icon + label. Action hints sit on hover (`data-hint`), not beside the button |
+| `.pill-btn` | Stage CTAs (Check, Implement, Prove). Same `.cta` treatment as the header |
 | `.panel` | `--surface-2` card |
-| `.list-row` | Findings / later task-like rows |
+| `.list-row` | Spec sections, findings, activity |
+| `.status-bar` / `.status-bar-mark` / `.status-bar-meta` | Stage content header: pill bar with tone, title, and icon meta. `data-tone` is idle / draft / ok / bad / progress |
+| `.spec-section` | Section checklist rows (present / missing / error) |
+| `.proof-report` | QA artifact (`derived/proof-report.md`) |
 | `.input` | `--surface-3` fields |
-| `.markdown-editor` / `.md-toolbar` / `.md-menu` / `.md-preview` | Markdown editor: Preview default, Edit source, Split. Sticky toolbar. Heading control is a dropdown. Preview uses `--font-ui`; Edit uses `--font-mono` |
-| `.review-diff` / `.review-file` / `.diff-add` / `.diff-del` | Improve patch review; add/del use status ok/bad surfaces |
+| `.markdown-editor` / `.md-toolbar` / `.md-menu` / `.md-preview` | Define-only editor: Preview default, Edit source, Split. Sticky toolbar. Heading control is a dropdown. Preview uses `--font-ui`; Edit uses `--font-mono` |
+| `.review-diff` / `.review-file` / `.diff-add` / `.diff-del` | Improve patch review on Define; add/del use status ok/bad surfaces |
+
+Display labels (Define, Implement, QA, Clear) are chrome only. `health.json` keys stay `spec` / `ready` / `build` / `proof`.
 
 ## Viewport
 
-Desktop: sidebar 248px + main. At `max-width: 768px` the shell stacks. No hamburger framework.
+Desktop: white canvas, flush graph, then stage nav 15.5rem + content. At `max-width: 768px` the workspace stacks. No hamburger framework.

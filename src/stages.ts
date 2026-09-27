@@ -2,7 +2,8 @@ import { fixFromProofAllowed } from "./fix-from-proof.js";
 import { NOUL_PASS } from "./gates.js";
 import { improveAllowed, improveHint } from "./improve.js";
 import { STACK_CHOICE_HINT } from "./stack.js";
-import type { BuildMeter, Health, ReadyMeter, StageAction, StageBoard } from "./types.js";
+import { OPTIONAL_H2, REQUIRED_H2 } from "./types.js";
+import type { BuildMeter, Health, PipelineTone, PipelineView, ReadyMeter, StageAction, StageBoard } from "./types.js";
 
 export function buildAllowsProve(build: BuildMeter): boolean {
   if (build.owned === false) return true;
@@ -27,11 +28,137 @@ export function emptyStages(): StageBoard {
 }
 
 export function readyBadge(ready: ReadyMeter): string {
-  const state = ready.state === "blocked" ? "Blocked" : ready.state === "ready" ? "Ready" : "Not yet";
+  const state = ready.state === "blocked" ? "Blocked" : ready.state === "ready" ? "Clear" : "Not yet";
   if (ready.jevCurrent && typeof ready.packNoul === "number") {
     return `${state} · ${ready.packNoul.toFixed(2)}`;
   }
   return state;
+}
+
+export const SECTION_PURPOSES: Record<string, string> = {
+  "Business Rules": "What must be true. Each rule has Id, Statement, and Observable.",
+  "Use Cases": "Who does what. Actor, preconditions, steps, and Outcome. Look for is deny; Choose is allow.",
+  "Roles & Permissions": "The matrix: which role may perform which action.",
+  Overview: "Optional context for the requirement.",
+  "Out of scope": "Optional. What this pack does not cover.",
+  "Open questions": "Optional. Unresolved questions for the owner.",
+  Entities: "Optional. Named things the spec talks about.",
+  "UI notes": "Optional. Presentation hints that are not rules.",
+};
+
+export function sectionCatalog(): { name: string; required: boolean; purpose: string }[] {
+  return [
+    ...REQUIRED_H2.map((name) => ({ name, required: true, purpose: SECTION_PURPOSES[name] ?? "" })),
+    ...OPTIONAL_H2.map((name) => ({ name, required: false, purpose: SECTION_PURPOSES[name] ?? "" })),
+  ];
+}
+
+export function pipelineView(health: Health | null, packPresent: boolean): PipelineView {
+  const implementOwned = health?.build.owned !== false;
+  const specState = health?.spec.state ?? "empty";
+  const ready = health?.ready;
+  const build = health?.build;
+  const proof = health?.proof;
+
+  const defineTone: PipelineTone =
+    specState === "empty"
+      ? "idle"
+      : specState === "drafting"
+        ? "draft"
+        : ready?.state === "blocked"
+          ? "bad"
+          : ready?.state === "ready"
+            ? "ok"
+            : "draft";
+
+  const implementTone: PipelineTone =
+    build?.state === "running"
+      ? "progress"
+      : build?.state === "failed"
+        ? "bad"
+        : build?.state === "succeeded"
+          ? "ok"
+          : build?.state === "stale"
+            ? "draft"
+            : "idle";
+
+  const qaTone: PipelineTone =
+    proof?.state === "passed"
+      ? "ok"
+      : proof?.state === "failed"
+        ? "bad"
+        : proof?.state === "needs_review" || proof?.state === "stale"
+          ? "draft"
+          : "idle";
+
+  const specTone: PipelineTone =
+    specState === "empty" ? "idle" : specState === "drafting" ? "draft" : specState === "valid" ? "ok" : "draft";
+  const judgmentTone: PipelineTone =
+    ready?.state === "blocked" ? "bad" : ready?.state === "ready" ? "ok" : specState === "valid" ? "draft" : "idle";
+  const specBadge =
+    specState === "empty" ? "Empty" : specState === "drafting" ? "Drafting" : specState === "valid" ? "Valid" : specState;
+  const defineBadge = specState !== "valid" ? specBadge : ready ? readyBadge(ready) : "Not yet";
+  const judgmentBadge = ready ? readyBadge(ready) : "Not yet";
+  const implementBadge =
+    build?.state === "running"
+      ? "Implementing"
+      : build?.state === "succeeded"
+        ? "Succeeded"
+        : build?.state === "failed"
+          ? "Failed"
+          : build?.state === "stale"
+            ? "Stale"
+            : "Not yet";
+  const qaBadge =
+    proof?.state === "passed"
+      ? "Passed"
+      : proof?.state === "failed"
+        ? "Failed"
+        : proof?.state === "needs_review"
+          ? "Needs review"
+          : proof?.state === "stale"
+            ? "Stale"
+            : "Not yet";
+
+  return {
+    implementOwned,
+    nodes: [
+      {
+        id: "start",
+        label: "Start",
+        view: "define",
+        tone: packPresent ? "ok" : "idle",
+        badge: packPresent ? "Pack" : "Create",
+      },
+      {
+        id: "define",
+        label: "Define",
+        view: "define",
+        tone: defineTone,
+        badge: defineBadge,
+        children: [
+          { id: "spec", label: "Spec", view: "spec", tone: specTone, badge: specBadge },
+          { id: "judgment", label: "Judgment", view: "judgment", tone: judgmentTone, badge: judgmentBadge },
+        ],
+      },
+      {
+        id: "implement",
+        label: "Implement",
+        view: "implement",
+        tone: implementTone,
+        badge: implementBadge,
+        hidden: !implementOwned,
+      },
+      { id: "qa", label: "QA", view: "qa", tone: qaTone, badge: qaBadge },
+      {
+        id: "end",
+        label: "End",
+        view: "qa",
+        tone: proof?.state === "passed" ? "ok" : "idle",
+        badge: proof?.state === "passed" ? "Passed" : undefined,
+      },
+    ],
+  };
 }
 
 export function computeStages(health: Health, ready: ReadyMeter): StageBoard {

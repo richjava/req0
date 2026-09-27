@@ -9,50 +9,41 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="sidebar">
-        <p class="sidebar-brand">Req0</p>
-        <p class="sidebar-pack" id="pack-title">Loading…</p>
-        <p class="nav-label">Sections</p>
-        <nav id="sections" class="nav-list"></nav>
-        <p class="nav-label">Findings</p>
-        <ul id="findings" class="list-rows"></ul>
-      </aside>
-
-      <div class="main">
-        <header class="topbar">
+    <div class="app-shell app-shell-pipeline">
+      <header class="topbar">
+        <div class="topbar-start">
+          <img class="logo-horiz" src="/req0-logo-horiz.png" alt="Req0" width="148" height="36" />
           <div class="topbar-copy">
-            <p class="eyebrow">Requirement</p>
+            <p class="sidebar-pack" id="pack-title">Loading…</p>
             <p class="going" id="how-going">Loading…</p>
           </div>
-          <div class="topbar-actions">
-            <p class="hint" id="next-hint"></p>
-            <button type="button" class="btn-primary" id="next-action" disabled>…</button>
+        </div>
+        <div class="topbar-actions">
+          <p class="hint" id="next-hint" hidden></p>
+          <button type="button" class="btn-primary cta" id="next-action" disabled>…</button>
+        </div>
+      </header>
+      <div class="stack-gate hidden" id="stack-gate">
+        <div class="stack-gate-inner">
+          <h1 class="stack-gate-title">Choose a stack</h1>
+          <p class="stack-gate-copy" id="stack-copy">This product repo is empty and no stack is recorded yet. Pick one to continue. Req0 writes it to req0.json. Amplify also writes a names-only .env.example if that file is missing.</p>
+          <div class="stack-gate-actions" id="stack-bar">
+            <button type="button" class="stack-choice" data-stack="nextjs-default" id="stack-nextjs">
+              <strong>Next.js default</strong>
+              <span>App Router, TypeScript, Tailwind, shadcn/ui, Prisma, PostgreSQL, Better Auth</span>
+            </button>
+            <button type="button" class="stack-choice" data-stack="amplify-gen2" id="stack-amplify">
+              <strong>Amplify Gen 2</strong>
+              <span>Next.js, Cognito, Data, S3</span>
+            </button>
           </div>
-        </header>
+          <p class="hint stack-gate-error" id="stack-error"></p>
+        </div>
+      </div>
+      <div class="main" id="cockpit-app">
+        <section class="pipeline" aria-label="Pipeline">
 
-        <section class="pills" aria-label="Health">
-          <article class="status-pill" data-meter="spec" data-state="empty">
-            <span class="status-pill-name">Spec</span>
-            <strong id="meter-spec">—</strong>
-          </article>
-          <article class="status-pill" data-meter="ready" data-state="not_yet">
-            <span class="status-pill-name">Ready</span>
-            <strong id="meter-ready">Not yet</strong>
-            <button type="button" class="pill-btn" id="action-ready" hidden disabled></button>
-          </article>
-          <article class="status-pill" data-meter="build" data-state="not_yet">
-            <span class="status-pill-name">Build</span>
-            <strong id="meter-build">Not yet</strong>
-            <button type="button" class="pill-btn" id="action-build" hidden disabled></button>
-            <button type="button" class="pill-btn" id="action-build-ignore" hidden disabled></button>
-            <button type="button" class="pill-btn" id="action-build-stop" hidden disabled></button>
-          </article>
-          <article class="status-pill" data-meter="proof" data-state="not_yet">
-            <span class="status-pill-name">Proof</span>
-            <strong id="meter-proof">Not yet</strong>
-            <button type="button" class="pill-btn" id="action-proof" hidden disabled></button>
-          </article>
+          <div id="pipeline-graph" class="pipeline-graph"></div>
         </section>
 
         <div class="create-bar hidden" id="create-bar">
@@ -64,30 +55,67 @@
           <p class="hint" id="create-error"></p>
         </div>
 
-        <div class="create-bar hidden" id="stack-bar">
-          <p class="hint" id="stack-copy">This product repo is empty. Choose a stack. Req0 records it in req0.json. Amplify also writes a names-only .env.example if that file is missing.</p>
-          <button type="button" class="btn-secondary" data-stack="nextjs-default" id="stack-nextjs">Next.js default</button>
-          <button type="button" class="btn-secondary" data-stack="amplify-gen2" id="stack-amplify">Amplify Gen 2</button>
-          <p class="hint" id="stack-error"></p>
-        </div>
+        <div class="stage-workspace">
+          <nav id="stage-nav" class="stage-nav" aria-label="Stages"></nav>
+          <div class="stage-main">
+            <section class="panel stage-view workspace" id="view-define" data-view="define">
+              <div class="workspace-head">
+                <p class="editor-label" id="workspace-label">requirement.md</p>
+                <div class="review-actions hidden" id="review-actions">
+                  <button type="button" class="btn-secondary cta" id="review-reject">Reject</button>
+                  <button type="button" class="btn-primary cta" id="review-accept" disabled>Accept</button>
+                </div>
+              </div>
+              <div id="editor" class="markdown-editor" aria-label="requirement.md"></div>
+              <div class="review-diff hidden" id="review-diff" hidden></div>
+              <p class="save-state" id="save-state"></p>
+            </section>
 
-        <section class="panel activity-panel" id="activity-panel" aria-label="Activity">
-          <p class="editor-label">Activity</p>
-          <ol id="activity" class="list-rows activity-log"></ol>
-        </section>
+            <section class="panel stage-view hidden" id="view-spec" data-view="spec" hidden>
+              <div class="status-bar" id="spec-status" data-tone="idle"></div>
+              <ul id="spec-sections" class="list-rows spec-sections"></ul>
+              <p class="nav-label">Findings</p>
+              <ul id="spec-findings" class="list-rows"></ul>
+            </section>
 
-        <section class="panel" id="workspace">
-          <div class="workspace-head">
-            <p class="editor-label" id="workspace-label">requirement.md</p>
-            <div class="review-actions hidden" id="review-actions">
-              <button type="button" class="btn-secondary" id="review-reject">Reject</button>
-              <button type="button" class="btn-primary" id="review-accept" disabled>Accept</button>
-            </div>
+            <section class="panel stage-view hidden" id="view-judgment" data-view="judgment" hidden>
+              <div class="status-bar" id="judgment-badge" data-tone="idle"></div>
+              <div class="workspace-head">
+                <div class="stage-actions">
+                  <button type="button" class="pill-btn cta" id="action-ready" hidden disabled></button>
+                </div>
+              </div>
+              <ul id="judgment-findings" class="list-rows"></ul>
+            </section>
+
+            <section class="panel stage-view hidden" id="view-implement" data-view="implement" hidden>
+              <div class="status-bar" id="implement-status" data-tone="idle"></div>
+              <div class="workspace-head">
+                <div class="stage-actions">
+                  <button type="button" class="pill-btn cta" id="action-build" hidden disabled></button>
+                  <button type="button" class="pill-btn cta" id="action-build-ignore" hidden disabled></button>
+                  <button type="button" class="pill-btn cta cta-danger" id="action-build-stop" hidden disabled></button>
+                </div>
+              </div>
+              <p class="nav-label">Activity</p>
+              <ol id="implement-activity" class="list-rows activity-log"></ol>
+            </section>
+
+            <section class="panel stage-view hidden" id="view-qa" data-view="qa" hidden>
+              <div class="status-bar" id="qa-status" data-tone="idle"></div>
+              <div class="workspace-head">
+                <div class="stage-actions">
+                  <button type="button" class="pill-btn cta" id="action-proof" hidden disabled></button>
+                  <button type="button" class="pill-btn cta" id="action-fix-proof" hidden disabled></button>
+                </div>
+              </div>
+              <p class="nav-label">Report</p>
+              <div id="proof-report" class="proof-report md-preview"></div>
+              <p class="nav-label">Activity</p>
+              <ol id="qa-activity" class="list-rows activity-log"></ol>
+            </section>
           </div>
-          <div id="editor" class="markdown-editor" aria-label="requirement.md"></div>
-          <div class="review-diff hidden" id="review-diff" hidden></div>
-          <p class="save-state" id="save-state"></p>
-        </section>
+        </div>
       </div>
     </div>
     <dialog id="ignore-build-dialog" class="confirm-dialog">

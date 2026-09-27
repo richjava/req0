@@ -5,16 +5,85 @@
     "findings": []
   },
   "ready": {
-    "state": "not_yet",
-    "reason": "no_api_key",
+    "state": "ready",
+    "reason": "passed",
     "blockers": 0,
-    "nits": 0,
-    "findings": [],
-    "jevCurrent": false
+    "nits": 8,
+    "nextId": "UC-001",
+    "packNoul": 0.79,
+    "jevCurrent": true,
+    "findings": [
+      {
+        "id": "ready.contradict.UC-001",
+        "kind": "uncertain",
+        "severity": "nit",
+        "message": "UC-001 may contradict the matrix (noul 0.18).",
+        "specId": "UC-001",
+        "line": 55,
+        "noul": 0.18
+      },
+      {
+        "id": "ready.contradict.UC-002",
+        "kind": "uncertain",
+        "severity": "nit",
+        "message": "UC-002 may contradict the matrix (noul 0.18).",
+        "specId": "UC-002",
+        "line": 66,
+        "noul": 0.18
+      },
+      {
+        "id": "ready.contradict.UC-003",
+        "kind": "uncertain",
+        "severity": "nit",
+        "message": "UC-003 may contradict the matrix (noul 0.17).",
+        "specId": "UC-003",
+        "line": 77,
+        "noul": 0.17
+      },
+      {
+        "id": "ready.contradict.UC-004",
+        "kind": "uncertain",
+        "severity": "nit",
+        "message": "UC-004 may contradict the matrix (noul 0.18).",
+        "specId": "UC-004",
+        "line": 88,
+        "noul": 0.18
+      },
+      {
+        "id": "ready.contradict.UC-005",
+        "kind": "uncertain",
+        "severity": "nit",
+        "message": "UC-005 may contradict the matrix (noul 0.18).",
+        "specId": "UC-005",
+        "line": 99,
+        "noul": 0.18
+      },
+      {
+        "id": "ready.section.section.score.business-rules",
+        "kind": "section_score",
+        "severity": "nit",
+        "message": "Business Rules is only partial for a coding agent.",
+        "specId": "Business Rules"
+      },
+      {
+        "id": "ready.section.section.score.use-cases",
+        "kind": "section_score",
+        "severity": "nit",
+        "message": "Use Cases is only partial for a coding agent.",
+        "specId": "Use Cases"
+      },
+      {
+        "id": "ready.section.section.score.roles-permissions",
+        "kind": "section_score",
+        "severity": "nit",
+        "message": "Roles & Permissions is only partial for a coding agent.",
+        "specId": "Roles & Permissions"
+      }
+    ]
   },
   "build": {
     "state": "not_yet",
-    "needsStack": true
+    "needsStack": false
   },
   "proof": {
     "state": "not_yet",
@@ -22,23 +91,22 @@
     "findings": []
   },
   "nextAction": {
-    "id": "check-jev",
-    "label": "Check",
+    "id": "implement",
+    "label": "Implement",
     "enabled": true,
-    "hint": "Needs TYPESAFE_API_KEY."
+    "hint": "Starts a Cursor agent with derived/implement-brief.md. Use --adapter=manual to skip launch."
   },
   "stages": {
     "ready": {
-      "id": "check-jev",
-      "label": "Check",
-      "enabled": true,
-      "hint": "Needs TYPESAFE_API_KEY."
+      "id": "improve",
+      "label": "Improve it",
+      "enabled": false
     },
     "build": {
       "id": "implement",
       "label": "Implement",
-      "enabled": false,
-      "hint": "Choose a stack before Implement. Write it in req0.json, pass --stack=nextjs-default or --stack=amplify-gen2, or pick one in the cockpit."
+      "enabled": true,
+      "hint": "Starts a Cursor agent with derived/implement-brief.md. Use --adapter=manual to skip launch."
     },
     "proof": {
       "id": "prove",
@@ -47,5 +115,5 @@
       "hint": "Blocked without fixtures/runtime.yaml (baseUrl and deterministic login)."
     }
   },
-  "howThisIsGoing": "The pack is valid. Ready stays Not yet until a TypeSafe API key is set. Persona checks do not need a key."
+  "howThisIsGoing": "Ready. Zero blockers, 8 nits. Implementation is next."
 }

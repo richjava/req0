@@ -91,6 +91,36 @@ export type StageBoard = {
   stopImplement?: StageAction;
 };
 
+/** Cockpit display only. health.json still uses spec / ready / build / proof. */
+export type PipelineTone = "idle" | "draft" | "ok" | "bad" | "progress";
+
+export type PipelineViewId = "define" | "spec" | "judgment" | "implement" | "qa";
+
+export type PipelineNodeId = "start" | "define" | "implement" | "qa" | "end";
+
+export type PipelineBranch = {
+  id: "spec" | "judgment";
+  label: string;
+  view: PipelineViewId;
+  tone: PipelineTone;
+  badge?: string;
+};
+
+export type PipelineNode = {
+  id: PipelineNodeId;
+  label: string;
+  view: PipelineViewId;
+  tone: PipelineTone;
+  badge?: string;
+  hidden?: boolean;
+  children?: PipelineBranch[];
+};
+
+export type PipelineView = {
+  nodes: PipelineNode[];
+  implementOwned: boolean;
+};
+
 export type ReadyState = "not_yet" | "blocked" | "ready";
 
 export type ReadyReason =

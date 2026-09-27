@@ -97,7 +97,7 @@ describe("evaluateReady", () => {
     expect(ready.blockers).toBe(0);
     expect(ready.jevCurrent).toBe(true);
     expect(ready.packNoul).toBe(0.91);
-    expect(readyBadge(ready)).toBe("Ready · 0.91");
+    expect(readyBadge(ready)).toBe("Clear · 0.91");
   });
 
   it("drops a jev-run whose specHash does not match and hides noul", () => {
