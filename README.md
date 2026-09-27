@@ -1,6 +1,6 @@
 <div align="center">
 
-![Req0](docs/brand/req0-logo-stacked.png)
+<img src="docs/brand/req0-logo-horiz.png" alt="Req0" width="280" />
 
 </div>
 
