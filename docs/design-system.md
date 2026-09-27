@@ -54,7 +54,7 @@ Space: `--space-1` … `--space-6` (4px grid). Radius: 8px controls, 12px panels
 | `.panel` | `--surface-2` card |
 | `.list-row` | Findings / later task-like rows |
 | `.input` | `--surface-3` fields |
-| `.markdown-editor` / `.md-toolbar` / `.md-preview` | Markdown editor: Preview default, Edit source, Split. Toolbar inserts markers. Preview uses `--font-ui`; Edit uses `--font-mono` |
+| `.markdown-editor` / `.md-toolbar` / `.md-menu` / `.md-preview` | Markdown editor: Preview default, Edit source, Split. Sticky toolbar. Heading control is a dropdown. Preview uses `--font-ui`; Edit uses `--font-mono` |
 | `.review-diff` / `.review-file` / `.diff-add` / `.diff-del` | Improve patch review; add/del use status ok/bad surfaces |
 
 ## Viewport

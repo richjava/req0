@@ -60,11 +60,21 @@ const req0Theme = EditorView.theme({
 const FORMAT_ACTIONS = [
   { id: "bold", label: "B", title: "Bold", run: (view) => toggleInline(view, "**") },
   { id: "italic", label: "I", title: "Italic", run: (view) => toggleInline(view, "*") },
-  { id: "heading", label: "H", title: "Heading", run: (view) => toggleHeading(view, 2) },
+  { id: "heading" },
   { id: "quote", label: "“", title: "Quote", run: (view) => toggleLinePrefix(view, "> ") },
   { id: "list", label: "•", title: "Bulleted list", run: (view) => toggleLinePrefix(view, "- ") },
   { id: "ordered", label: "1.", title: "Numbered list", run: (view) => toggleLinePrefix(view, "1. ") },
   { id: "link", label: "↗", title: "Link", run: insertLink },
+];
+
+const HEADING_OPTIONS = [
+  { level: 1, label: "Heading 1" },
+  { level: 2, label: "Heading 2" },
+  { level: 3, label: "Heading 3" },
+  { level: 4, label: "Heading 4" },
+  { level: 5, label: "Heading 5" },
+  { level: 6, label: "Heading 6" },
+  { level: 0, label: "Paragraph" },
 ];
 
 const MODES = [
@@ -140,6 +150,16 @@ export function createMarkdownEditor(parent, options = {}) {
 
   const formatButtons = new Map();
   for (const action of FORMAT_ACTIONS) {
+    if (action.id === "heading") {
+      formats.append(
+        headingMenu((level) => {
+          if (mode === "preview") setMode("edit");
+          applyHeading(view, level);
+          view.focus();
+        }),
+      );
+      continue;
+    }
     const button = toolButton(action.label, action.title, () => {
       if (mode === "preview") setMode("edit");
       action.run(view);
@@ -218,6 +238,52 @@ export function createMarkdownEditor(parent, options = {}) {
   };
 }
 
+function headingMenu(onPick) {
+  const wrap = document.createElement("div");
+  wrap.className = "md-menu";
+
+  const toggle = toolButton("H ▾", "Heading", () => {
+    const open = wrap.classList.toggle("is-open");
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  toggle.setAttribute("aria-haspopup", "listbox");
+  toggle.setAttribute("aria-expanded", "false");
+
+  const list = document.createElement("div");
+  list.className = "md-menu-list";
+  list.setAttribute("role", "listbox");
+  list.setAttribute("aria-label", "Heading level");
+
+  for (const option of HEADING_OPTIONS) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `md-menu-item md-menu-h${option.level || "p"}`;
+    item.setAttribute("role", "option");
+    item.textContent = option.label;
+    item.addEventListener("click", () => {
+      wrap.classList.remove("is-open");
+      toggle.setAttribute("aria-expanded", "false");
+      onPick(option.level);
+    });
+    list.append(item);
+  }
+
+  wrap.append(toggle, list);
+
+  document.addEventListener("pointerdown", (event) => {
+    if (wrap.contains(event.target)) return;
+    wrap.classList.remove("is-open");
+    toggle.setAttribute("aria-expanded", "false");
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    wrap.classList.remove("is-open");
+    toggle.setAttribute("aria-expanded", "false");
+  });
+
+  return wrap;
+}
+
 function toolButton(label, title, onClick) {
   const button = document.createElement("button");
   button.type = "button";
@@ -259,9 +325,23 @@ function toggleInline(view, marker) {
   return true;
 }
 
-function toggleHeading(view, level) {
-  const prefix = `${"#".repeat(level)} `;
-  return toggleLinePrefix(view, prefix, /^#{1,6} /);
+function applyHeading(view, level) {
+  if (!level) return stripHeading(view);
+  return toggleLinePrefix(view, `${"#".repeat(level)} `, /^#{1,6} /);
+}
+
+function stripHeading(view) {
+  const main = view.state.selection.main;
+  const fromLine = view.state.doc.lineAt(main.from);
+  const toLine = view.state.doc.lineAt(main.to > main.from ? main.to - 1 : main.to);
+  const changes = [];
+  for (let number = fromLine.number; number <= toLine.number; number += 1) {
+    const line = view.state.doc.line(number);
+    const stripped = line.text.replace(/^#{1,6} /, "");
+    if (stripped !== line.text) changes.push({ from: line.from, to: line.to, insert: stripped });
+  }
+  if (changes.length) view.dispatch({ changes });
+  return true;
 }
 
 function toggleLinePrefix(view, prefix, strip = null) {
