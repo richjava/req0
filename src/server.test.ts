@@ -30,6 +30,10 @@ describe("cockpit reload contract", () => {
     expect(html).not.toMatch(/\bnew\s+EventSource\b|EventSource\s*\(/);
     expect(html).not.toMatch(/fonts\.googleapis|fonts\.gstatic/);
     expect(js).toMatch(/\/api\/state/);
+    expect(js).toMatch(/from\s+["']\.\/markdown-editor\.js["']/);
+    const bundle = await readFile(path.join(cockpitDir, "markdown-editor.js"), "utf8");
+    expect(bundle).toMatch(/createMarkdownEditor/);
+    expect(bundle).toMatch(/@codemirror|EditorView|markdown/);
   });
 
   it("finishes /api/events immediately so leftover EventSource cannot pin refresh", async () => {
@@ -56,7 +60,11 @@ describe("cockpit reload contract", () => {
     expect(html).toMatch(/no-store/);
     expect(html).toContain("action-build-ignore");
     expect(html).toContain("action-build-stop");
+    expect(html).toContain("markdown-editor");
     expect(html).toContain("Was implementation successful?");
+    const editor = await fetch(`${url}/markdown-editor.js`);
+    expect(editor.status).toBe(200);
+    expect(await editor.text()).toMatch(/createMarkdownEditor/);
     await expect(state.json()).resolves.toMatchObject({ busy: null });
   });
 

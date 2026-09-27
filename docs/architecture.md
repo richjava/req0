@@ -45,7 +45,7 @@ Jev client: [src/jev.ts](../src/jev.ts). Live calls are `POST https://api.typesa
 
 ## Cockpit
 
-Vanilla HTML/CSS/JS. Tokens: [cockpit/tokens.css](../cockpit/tokens.css). The server serves `cockpit/` and `/api/state`, `/api/requirement` (PUT markdown), `/api/check-jev`, `/api/implement`, `/api/prove`, create endpoints, and SSE reload.
+Vanilla HTML/CSS/JS. Tokens: [cockpit/tokens.css](../cockpit/tokens.css). The requirement.md field is a bundled markdown editor (`cockpit/markdown-editor.js`, `npm run build:cockpit`): Preview by default, plus Edit and Split. Toolbar inserts markdown markers into the CodeMirror 6 source. The server serves `cockpit/` and `/api/state`, `/api/requirement` (PUT markdown), `/api/check-jev`, `/api/implement`, `/api/prove`, create endpoints, and polls `/api/state`.
 
 File watch on `requirement.md` is best-effort. Saves from the cockpit always recompile.
 

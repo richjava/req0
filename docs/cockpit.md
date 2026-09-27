@@ -61,7 +61,7 @@ After Spec Valid, the Ready button is **Check**. Without `TYPESAFE_API_KEY` the 
 
 ## Editing
 
-The RO may edit in the cockpit or in the IDE. Saving the textarea PUTs markdown and recompiles. A current Jev score becomes stale until Check. Section nav jumps to `##` headings. Findings jump to line numbers or spec IDs. **Improve it** writes one opinionated brief for all open findings, then shows Accept/Reject.
+The RO may edit in the cockpit or in the IDE. The cockpit markdown editor defaults to **Preview** (rendered display), with **Edit** (source) and **Split**. A toolbar inserts markdown markers (bold, italic, heading, lists, link) into the source — it does not rewrite the frozen grammar. Saving PUTs markdown and recompiles. A current Jev score becomes stale until Check. Section nav and findings switch to Edit and jump to the matching heading, line, or spec ID. **Improve it** writes one opinionated brief for all open findings, then shows Accept/Reject.
 
 ## Create
 

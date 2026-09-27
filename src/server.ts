@@ -536,7 +536,7 @@ async function serveCockpit(pathname: string, res: ServerResponse): Promise<bool
 
 async function cacheBustHtml(html: string): Promise<string> {
   let out = html;
-  for (const asset of ["tokens.css", "styles.css", "app.js"] as const) {
+  for (const asset of ["tokens.css", "styles.css", "app.js", "markdown-editor.js"] as const) {
     const { mtimeMs } = await stat(path.join(cockpitDir, asset));
     out = out.replaceAll(`/${asset}"`, `/${asset}?v=${Math.floor(mtimeMs)}"`);
   }

@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:cockpit": "node scripts/build-markdown-editor.mjs",
     "req0": "tsx src/cli.ts",
     "start": "tsx src/cli.ts start",
     "test": "vitest run",
@@ -18,7 +19,14 @@
     "node": ">=22.15"
   },
   "devDependencies": {
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.39.16",
     "@types/node": "^24.5.2",
+    "esbuild": "^0.25.9",
+    "marked": "^18.0.14",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"

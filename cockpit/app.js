@@ -1,3 +1,5 @@
+import { createMarkdownEditor } from "./markdown-editor.js";
+
 const els = {
   title: document.getElementById("pack-title"),
   going: document.getElementById("how-going"),
@@ -41,6 +43,18 @@ const els = {
 let state = null;
 let saveTimer;
 let applying = false;
+
+const markdownEditor = createMarkdownEditor(document.getElementById("editor"), {
+  onChange: () => {
+    if (applying) return;
+    applying = true;
+    els.save.textContent = "Saving…";
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      void saveMarkdown();
+    }, 280);
+  },
+});
 let focusedSection = "Business Rules";
 let actionNotice = "";
 let actionBusy = false;
@@ -115,7 +129,9 @@ function render() {
   els.workspace.classList.toggle("hidden", needsNewPack && !state.markdown);
 
   if (!applying && !state.improveReview) {
-    els.editor.value = state.markdown ?? "";
+    applying = true;
+    markdownEditor.setValue(state.markdown ?? "");
+    applying = false;
   }
 
   renderReview();
@@ -130,8 +146,7 @@ function renderReview() {
   const hasDiff = Boolean(review?.files?.length);
   els.workspace?.classList.toggle("is-review", reviewing);
   els.activityPanel?.classList.toggle("is-review-idle", reviewing);
-  els.editor.classList.toggle("hidden", reviewing);
-  els.editor.hidden = reviewing;
+  markdownEditor.setHidden(reviewing);
   if (els.save) els.save.classList.toggle("hidden", reviewing);
   if (!els.reviewActions || !els.reviewDiff) return;
   els.reviewActions.classList.toggle("hidden", !reviewing);
@@ -247,7 +262,7 @@ function renderSections(markdown) {
     btn.addEventListener("click", () => {
       focusedSection = name;
       jumpToSection(name);
-      renderSections(els.editor.value);
+      renderSections(markdownEditor.getValue());
     });
     els.sections.append(btn);
   }
@@ -255,7 +270,7 @@ function renderSections(markdown) {
 
 function jumpToSection(name) {
   const marker = `## ${name}`;
-  const idx = els.editor.value.indexOf(marker);
+  const idx = markdownEditor.getValue().indexOf(marker);
   if (idx < 0) return;
   selectInEditor(idx, idx + marker.length);
 }
@@ -263,7 +278,7 @@ function jumpToSection(name) {
 function jumpToSpecId(id) {
   if (!id) return false;
   for (const marker of [`Id: ${id}`, `## ${id}`, id]) {
-    const idx = els.editor.value.indexOf(marker);
+    const idx = markdownEditor.getValue().indexOf(marker);
     if (idx < 0) continue;
     selectInEditor(idx, idx + marker.length);
     return true;
@@ -338,7 +353,7 @@ function appendActivity(line) {
 }
 
 function jumpToLine(line) {
-  const lines = els.editor.value.split("\n");
+  const lines = markdownEditor.getValue().split("\n");
   let start = 0;
   for (let i = 0; i < line - 1; i++) start += (lines[i]?.length ?? 0) + 1;
   const end = start + (lines[line - 1]?.length ?? 0);
@@ -346,33 +361,25 @@ function jumpToLine(line) {
 }
 
 function selectInEditor(start, end) {
-  els.editor.focus();
-  els.editor.setSelectionRange(start, end);
-  const pre = els.editor.value.slice(0, start);
-  const line = pre.split("\n").length;
-  els.editor.scrollTop = Math.max(0, (line - 3) * 22);
+  markdownEditor.select(start, end);
 }
-
-els.editor.addEventListener("input", () => {
-  applying = true;
-  els.save.textContent = "Saving…";
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    void saveMarkdown();
-  }, 280);
-});
 
 async function saveMarkdown() {
   actionNotice = "";
-  const res = await fetch("/api/requirement", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ markdown: els.editor.value }),
-  });
-  state = await res.json();
-  applying = false;
-  els.save.textContent = `Compiled · Spec ${state.health?.spec.state ?? ""}`;
-  render();
+  try {
+    const res = await fetch("/api/requirement", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markdown: markdownEditor.getValue() }),
+    });
+    state = await res.json();
+    els.save.textContent = `Compiled · Spec ${state.health?.spec.state ?? ""}`;
+    render();
+  } catch {
+    els.save.textContent = "Save failed";
+  } finally {
+    applying = false;
+  }
 }
 
 els.reviewAccept?.addEventListener("click", () => {
