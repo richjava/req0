@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/brand/req0-logo-horiz.png" alt="Req0" width="280" />
+<img src="docs/brand/req0-logo-horiz.png" alt="Req0" width="100%" />
 
 </div>
 
