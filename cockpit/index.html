@@ -45,6 +45,8 @@
             <span class="status-pill-name">Build</span>
             <strong id="meter-build">Not yet</strong>
             <button type="button" class="pill-btn" id="action-build" hidden disabled></button>
+            <button type="button" class="pill-btn" id="action-build-ignore" hidden disabled></button>
+            <button type="button" class="pill-btn" id="action-build-stop" hidden disabled></button>
           </article>
           <article class="status-pill" data-meter="proof" data-state="not_yet">
             <span class="status-pill-name">Proof</span>
@@ -60,6 +62,13 @@
           </label>
           <button type="button" class="btn-secondary" id="create-new">Create pack</button>
           <p class="hint" id="create-error"></p>
+        </div>
+
+        <div class="create-bar hidden" id="stack-bar">
+          <p class="hint" id="stack-copy">This product repo is empty. Choose a stack. Req0 records it in req0.json. Amplify also writes a names-only .env.example if that file is missing.</p>
+          <button type="button" class="btn-secondary" data-stack="nextjs-default" id="stack-nextjs">Next.js default</button>
+          <button type="button" class="btn-secondary" data-stack="amplify-gen2" id="stack-amplify">Amplify Gen 2</button>
+          <p class="hint" id="stack-error"></p>
         </div>
 
         <section class="panel activity-panel" id="activity-panel" aria-label="Activity">
@@ -81,6 +90,14 @@
         </section>
       </div>
     </div>
+    <dialog id="ignore-build-dialog" class="confirm-dialog">
+      <p>Was implementation successful?</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-secondary" id="ignore-build-no">No</button>
+        <button type="button" class="btn-primary" id="ignore-build-yes">Yes</button>
+        <button type="button" class="btn-secondary" id="ignore-build-cancel">Cancel</button>
+      </div>
+    </dialog>
     <script src="/app.js" type="module"></script>
   </body>
 </html>

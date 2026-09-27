@@ -36,3 +36,14 @@ personas:
     email: rolea@example.test
     password: test-only-not-production
 `;
+
+export const RUNTIME_STUB = `# How Req0 proves this pack. Test-only. Credentials stay in personas.yaml.
+baseUrl: http://127.0.0.1:3000
+startCommand: npm run dev
+resetCommand: npm run db:seed
+login:
+  path: /login
+  email: "#email"
+  password: "#password"
+  submit: "button[type=submit]"
+`;

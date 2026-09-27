@@ -4,7 +4,7 @@ Portable coding-agent brief. Read this file, then the compiled `derived/spec.jso
 
 ## Stack
 
-This product repo is empty (no customer app at the repo root). Ask the Requirement Owner which stack to use. Default: Next.js App Router, TypeScript, Tailwind, shadcn/ui, Prisma, PostgreSQL, Better Auth. Record the choice in req0.json at the repo root so later requirements stay consistent. Req0's own CLI package.json does not count as a customer app. Adapter: manual.
+This product repo is empty (no customer app at the repo root). Ask the Requirement Owner which stack to use. Default: Next.js App Router, TypeScript, Tailwind, shadcn/ui, Prisma, PostgreSQL, Better Auth. AWS option: Amplify Gen 2, Next.js, Cognito, Data, S3 (id amplify-gen2). Record the choice in req0.json at the repo root so later requirements stay consistent. Req0's own CLI package.json does not count as a customer app. Adapter: manual.
 
 Default stack (empty repo only): Next.js App Router, TypeScript, Tailwind, shadcn/ui, Prisma, PostgreSQL, Better Auth.
 
@@ -127,6 +127,49 @@ An invoice belongs to exactly one department. It has status Unpaid or Approved, 
 
 The assigned approver must be a manager whose department equals the invoice's department. Role-level `approve-invoice` allow for Manager is further restricted by BR-001, BR-004, and BR-005.
 
+## Product README
+
+Write `README.md` at the product repo root so a stranger can run the app. If a README already exists, update the setup section. Use this requirement's title and the pack paths below. Do not invent a product name.
+
+~~~~markdown
+# Invoice approval
+
+Department managers approve supplier invoices for their own department. A manager may approve only if they are the assigned approver and the invoice belongs to their department. Viewers can read invoices but cannot change status. Admins assign an approver; they cannot approve.
+
+## Stack
+
+Next.js App Router, TypeScript, Tailwind, shadcn/ui, Prisma, PostgreSQL, Better Auth.
+
+## Setup
+
+1. Copy `.env.example` to `.env` and fill the names in that file.
+2. Seed fixture data:
+
+```bash
+npm run db:seed
+```
+
+3. Start the app:
+
+```bash
+npm run dev
+```
+
+Login personas are in `docs/requirements/invoice-approval/fixtures/personas.yaml`.
+
+Req0 runtime: `docs/requirements/invoice-approval/fixtures/runtime.yaml`.
+
+~~~~
+
+## Pack files
+
+- Seed the app from existing `fixtures/personas.yaml`. Do not add roles. Do not invent emails.
+- `fixtures/runtime.yaml` may be a stub. Set `baseUrl`, `startCommand`, and `resetCommand` to the app you started. Keep login selectors unless you change `/login` to match — then change both.
+- Write or update the product-repo `.env.example` with variable names only. No real keys.
+- Write `README.md` at the product repo root using the Product README section. Use this requirement's title and pack paths. Do not invent a product name.
+- The seed/reset script command must match `runtime.yaml` `resetCommand`.
+- First-party `/login` must match those selectors.
+
 ## Security baseline
 
 - No production credentials in the spec or this brief.
@@ -135,5 +178,6 @@ The assigned approver must be a manager whose department equals the invoice's de
 
 ## Done means
 
+The app exists in the recorded stack. Personas are seeded. `fixtures/runtime.yaml` matches that app. Product `.env.example` has names only. Product `README.md` has setup for this stack.
 A coding-agent run finishing is **Build Succeeded**, not “the app boots.” Boot and login are Proof (Milestone 4).
 

@@ -18,6 +18,20 @@ export function specHash(spec: SpecAst): string {
   return createHash("sha256").update(JSON.stringify(spec)).digest("hex");
 }
 
+/** Pids of Cursor agents this process launched and is still waiting on. */
+export const followedImplementPids = new Set<number>();
+
+export const IMPLEMENT_INTERRUPTED =
+  "Implement was interrupted. This Req0 process is not following a Cursor agent. Rebuild or Fix from proof.";
+
+export function followImplementPid(pid?: number): void {
+  if (typeof pid === "number" && pid > 0) followedImplementPids.add(pid);
+}
+
+export function unfollowImplementPid(pid?: number): void {
+  if (typeof pid === "number") followedImplementPids.delete(pid);
+}
+
 export function evaluateBuild(spec: SpecAst | null, run: BuildRun | null): BuildMeter {
   if (!run) return { state: "not_yet" };
   if (spec && run.specHash !== specHash(spec) && run.state !== "failed") {
@@ -27,7 +41,42 @@ export function evaluateBuild(spec: SpecAst | null, run: BuildRun | null): Build
       message: "Spec changed after the last implement run.",
     };
   }
-  return { state: run.state, adapter: run.adapter, message: run.message };
+  if (run.state === "running" && !isFollowedImplement(run.pid)) {
+    return {
+      state: "failed",
+      adapter: run.adapter,
+      message: IMPLEMENT_INTERRUPTED,
+    };
+  }
+  return {
+    state: run.state,
+    adapter: run.adapter,
+    message: run.message,
+    ...(run.ignored ? { ignored: true } : {}),
+  };
+}
+
+export class IgnoreBuildLockedError extends Error {
+  readonly code = "ignore_build_gate";
+
+  constructor(message = "Ignore is only when Build failed.") {
+    super(message);
+    this.name = "IgnoreBuildLockedError";
+  }
+}
+
+export function isFollowedImplement(pid?: number): boolean {
+  return typeof pid === "number" && pid > 0 && followedImplementPids.has(pid);
+}
+
+export function implementProcessGone(pid?: number): boolean {
+  if (typeof pid !== "number" || pid <= 0) return true;
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 export function emptyReady(reason: ReadyMeter["reason"] = "spec_invalid"): ReadyMeter {
@@ -247,7 +296,12 @@ function goingCopy(health: Health, ready: ReadyMeter): string {
   }
 
   if (ready.state === "ready") {
-    if (health.build.owned === false || health.build.state === "succeeded") return proofGoing(health);
+    if (health.build.owned === false || health.build.state === "succeeded" || health.build.ignored) {
+      return proofGoing(health);
+    }
+    if (health.build.state === "running") {
+      return "Cursor agent is running. Activity shows tools and messages as they happen. Stop ends the run. Build Succeeded is not proof the app boots.";
+    }
     if (health.build.state === "stale") return "Spec changed after the last implement run. Build is stale.";
     return ready.nits > 0
       ? `Ready. Zero blockers, ${ready.nits} nit${ready.nits === 1 ? "" : "s"}. Implementation is next.`
@@ -309,9 +363,14 @@ function fmt(noul: number): string {
 function proofGoing(health: Health): string {
   if (!health.proof.runtime) return "Proof needs fixtures/runtime.yaml.";
   if (health.proof.state === "failed") {
-    return health.proof.message ? `Proof failed: ${health.proof.message}` : "Proof failed.";
+    const detail = health.proof.message ? `Proof failed: ${health.proof.message}` : "Proof failed.";
+    return health.build.owned === false ? detail : `${detail} Fix from proof updates the app from the last report.`;
   }
-  if (health.proof.state === "needs_review") return "Proof needs review.";
+  if (health.proof.state === "needs_review") {
+    return health.build.owned === false
+      ? "Proof needs review."
+      : "Proof needs review. Fix from proof updates the app from the last report.";
+  }
   if (health.proof.state === "stale") return "Proof is stale.";
   return "";
 }

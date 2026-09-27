@@ -56,6 +56,7 @@ export async function createPlaywrightDriver(onProgress?: ProgressFn): Promise<P
             }
           }
         }
+        await settleAfterOpen(page);
         for (const step of qa.steps) {
           if (!/^select\b/i.test(step)) continue;
           const selectError = await applySelect(page, step);
@@ -121,15 +122,24 @@ async function submitLogin(
   if ((await email.inputValue()) !== persona.email) {
     return `Login form did not keep ${persona.email} (saw "${await email.inputValue()}").`;
   }
+  if ((await password.inputValue()) !== (persona.password ?? "")) {
+    await fillControlled(password, persona.password ?? "");
+  }
   await submit.click();
 
-  await Promise.race([
-    page.waitForURL((url) => !isLoginUrl(String(url), runtime), { timeout: 15_000 }),
-    email.waitFor({ state: "hidden", timeout: 15_000 }),
-  ]).catch(() => {});
+  const leftLogin = await waitToLeaveLogin(page, runtime, email);
+  if (leftLogin) {
+    await waitForPostLogin(page);
+    return null;
+  }
 
-  const stillOnLogin = isLoginUrl(page.url(), runtime) && (await email.count()) > 0;
-  if (!stillOnLogin) return null;
+  await fillControlled(email, persona.email);
+  await fillControlled(password, persona.password ?? "");
+  await submit.click();
+  if (await waitToLeaveLogin(page, runtime, email)) {
+    await waitForPostLogin(page);
+    return null;
+  }
 
   const body = ((await page.locator("body").innerText().catch(() => "")) ?? "")
     .replace(/\s+/g, " ")
@@ -139,6 +149,30 @@ async function submitLogin(
     return `Deterministic login for ${persona.email} never ran the sign-in script (the form did a plain HTML GET). fixtures/runtime.yaml baseUrl must match the origin you use in the browser — localhost and 127.0.0.1 are different.`;
   }
   return `Deterministic login failed for ${persona.email}. ${body}`;
+}
+
+async function waitToLeaveLogin(
+  page: import("playwright").Page,
+  runtime: RuntimeFixture,
+  email: import("playwright").Locator,
+): Promise<boolean> {
+  await Promise.race([
+    page.waitForURL((url) => !isLoginUrl(String(url), runtime), { timeout: 15_000 }),
+    email.waitFor({ state: "hidden", timeout: 15_000 }),
+  ]).catch(() => {});
+  if (!(isLoginUrl(page.url(), runtime) && (await email.count()) > 0)) return true;
+  const body = ((await page.locator("body").innerText().catch(() => "")) ?? "").toLowerCase();
+  if (!/signing in/.test(body)) return false;
+  await Promise.race([
+    page.waitForURL((url) => !isLoginUrl(String(url), runtime), { timeout: 15_000 }),
+    email.waitFor({ state: "hidden", timeout: 15_000 }),
+  ]).catch(() => {});
+  return !(isLoginUrl(page.url(), runtime) && (await email.count()) > 0);
+}
+
+async function waitForPostLogin(page: import("playwright").Page): Promise<void> {
+  await page.waitForLoadState("domcontentloaded", { timeout: 15_000 }).catch(() => {});
+  await page.getByRole("link").first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
 }
 
 function isLoginUrl(url: string, runtime: RuntimeFixture): boolean {
@@ -241,14 +275,21 @@ async function readSelectOptions(
 }
 
 async function applySelect(page: import("playwright").Page, step: string): Promise<string | null> {
-  const wanted = step.replace(/^select\s+/i, "").replace(/^the\s+/i, "").trim();
+  const wanted = selectWantedLabel(step);
   const select = page.locator("select").first();
   await select.waitFor({ state: "visible", timeout: 8_000 }).catch(() => {});
   if ((await select.count()) === 0) {
     return `No select control for: ${step}`;
   }
-  const options = await readSelectOptions(select);
-  const match = options.find((item) => optionMatches(item.label, wanted));
+
+  const deadline = Date.now() + 8_000;
+  let options = await readSelectOptions(select);
+  let match = options.find((item) => optionMatches(item.label, wanted));
+  while (!match && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    options = await readSelectOptions(select);
+    match = options.find((item) => optionMatches(item.label, wanted));
+  }
   if (!match) {
     const listed = options.map((item) => item.label).filter(Boolean).join(", ") || "(none)";
     return `No option matching "${wanted}". Saw: ${listed}.`;
@@ -275,12 +316,23 @@ async function applySelect(page: import("playwright").Page, step: string): Promi
   return null;
 }
 
+export function selectWantedLabel(step: string): string {
+  return step
+    .replace(/^select\s+/i, "")
+    .replace(/^the\s+/i, "")
+    .replace(/\s+in\s+the\s+.+$/i, "")
+    .trim();
+}
+
 export function optionMatches(optionLabel: string, wanted: string): boolean {
   const option = optionLabel.toLowerCase();
   const want = wanted.toLowerCase().trim();
   if (!want) return false;
   if (option.includes(want)) return true;
-  return want.split(/\s+/).every((word) => option.includes(word));
+  if (want.split(/\s+/).every((word) => option.includes(word))) return true;
+  const wantTokens = tokenize(wanted);
+  if (wantTokens.length === 0) return false;
+  return wantTokens.every((token) => option.includes(token));
 }
 
 async function openTarget(
@@ -325,7 +377,19 @@ async function openTarget(
   } else {
     await page.waitForLoadState("domcontentloaded", { timeout: 15_000 });
   }
+  await settleAfterOpen(page);
   return true;
+}
+
+async function settleAfterOpen(page: import("playwright").Page): Promise<void> {
+  const loading = page.getByText(/^Loading/).first();
+  await loading.waitFor({ state: "visible", timeout: 500 }).catch(() => {});
+  await loading.waitFor({ state: "hidden", timeout: 10_000 }).catch(() => {});
+  await page
+    .locator("#status-label, [data-testid='status-label'], select, h1")
+    .first()
+    .waitFor({ state: "visible", timeout: 8_000 })
+    .catch(() => {});
 }
 
 function linkMatchesOpen(name: string, step: string): boolean {

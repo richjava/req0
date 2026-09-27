@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { controlPendingName, optionMatches, pickOpenTarget } from "./browser.js";
+import { controlPendingName, optionMatches, pickOpenTarget, selectWantedLabel } from "./browser.js";
 
 const invoices = [
   { index: 0, name: "INV-FIN-001 Northwind Supplies · Finance Approver: Finance Manager" },
@@ -58,6 +58,28 @@ describe("pickOpenTarget", () => {
   it("does not treat a list Open as a record pick", () => {
     expect(pickOpenTarget(tickets, "Open the tickets list", "The clerk is logged in.")).toBeUndefined();
   });
+
+  it("uses assigned-approver list text when invoice numbers are not in the spec", () => {
+    const awsRows = [
+      { index: 0, name: "FIN-001 Acme Supplies Finance Approver: Finance Manager" },
+      { index: 1, name: "FIN-002 Northwind Paper Finance No approver assigned" },
+      { index: 2, name: "OPS-001 Field Services Co Operations No approver assigned" },
+    ];
+    expect(
+      pickOpenTarget(
+        awsRows,
+        "Open the invoice",
+        "The Manager persona (Finance, manager@example.test) is logged in. An unpaid Finance invoice exists with this manager as assignedApprover.",
+      )?.name,
+    ).toMatch(/FIN-001/);
+    expect(
+      pickOpenTarget(
+        awsRows,
+        "Open the invoice",
+        "The Admin persona is logged in. An unpaid Finance invoice has no assignedApprover.",
+      )?.name,
+    ).toMatch(/FIN-002/);
+  });
 });
 
 describe("optionMatches", () => {
@@ -67,6 +89,21 @@ describe("optionMatches", () => {
     expect(optionMatches("Operations Manager (ops-manager@example.test)", "Finance manager")).toBe(
       false,
     );
+    expect(
+      optionMatches(
+        "Finance Manager (manager@example.test)",
+        "Finance manager in the manager select",
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("selectWantedLabel", () => {
+  it("strips the control location so the option can match", () => {
+    expect(selectWantedLabel("Select the Finance manager in the manager select")).toBe(
+      "Finance manager",
+    );
+    expect(selectWantedLabel("Select the Finance manager")).toBe("Finance manager");
   });
 });
 

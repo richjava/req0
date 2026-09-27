@@ -9,7 +9,13 @@ const els = {
   hint: document.getElementById("next-hint"),
   actionReady: document.getElementById("action-ready"),
   actionBuild: document.getElementById("action-build"),
+  actionBuildIgnore: document.getElementById("action-build-ignore"),
+  actionBuildStop: document.getElementById("action-build-stop"),
   actionProof: document.getElementById("action-proof"),
+  ignoreDialog: document.getElementById("ignore-build-dialog"),
+  ignoreYes: document.getElementById("ignore-build-yes"),
+  ignoreNo: document.getElementById("ignore-build-no"),
+  ignoreCancel: document.getElementById("ignore-build-cancel"),
   sections: document.getElementById("sections"),
   findings: document.getElementById("findings"),
   editor: document.getElementById("editor"),
@@ -18,6 +24,10 @@ const els = {
   newId: document.getElementById("new-id"),
   createNew: document.getElementById("create-new"),
   createError: document.getElementById("create-error"),
+  stackBar: document.getElementById("stack-bar"),
+  stackError: document.getElementById("stack-error"),
+  stackNextjs: document.getElementById("stack-nextjs"),
+  stackAmplify: document.getElementById("stack-amplify"),
   workspace: document.getElementById("workspace"),
   activityPanel: document.getElementById("activity-panel"),
   workspaceLabel: document.getElementById("workspace-label"),
@@ -90,15 +100,18 @@ function render() {
   const action = health?.nextAction;
   const review = state.improveReview;
   if (review?.files?.length) actionNotice = "";
-  els.next.textContent = actionBusy && !review?.files?.length ? els.next.textContent : action?.label ?? "Create a requirement";
-  els.next.disabled = !action || !action.enabled || (actionBusy && !review?.files?.length);
+  const canStop = action?.id === "stop-implement";
+  els.next.textContent =
+    actionBusy && !canStop && !review?.files?.length ? els.next.textContent : action?.label ?? "Create a requirement";
+  els.next.disabled = !action || !action.enabled || (actionBusy && !canStop && !review?.files?.length);
   els.hint.textContent = review ? action?.hint || "" : actionNotice || action?.hint || "";
-  setStageButton(els.actionReady, health?.stages?.ready, action?.id);
-  setStageButton(els.actionBuild, health?.stages?.build, action?.id);
-  setStageButton(els.actionProof, health?.stages?.proof, action?.id);
+  setStageButtons(health, action?.id);
 
   const needsNewPack = !packId;
   els.createBar.classList.toggle("hidden", !needsNewPack);
+  const repo = state.productRepo;
+  const needsStack = Boolean(repo?.root && repo.implement && repo.empty && !repo.recorded);
+  els.stackBar?.classList.toggle("hidden", !needsStack);
   els.workspace.classList.toggle("hidden", needsNewPack && !state.markdown);
 
   if (!applying && !state.improveReview) {
@@ -198,6 +211,14 @@ function readyLabel(ready) {
   return state;
 }
 
+function setStageButtons(health, primaryId) {
+  setStageButton(els.actionReady, health?.stages?.ready, primaryId);
+  setStageButton(els.actionBuild, health?.stages?.build, primaryId);
+  setStageButton(els.actionBuildIgnore, health?.stages?.ignoreBuild, primaryId);
+  setStageButton(els.actionBuildStop, health?.stages?.stopImplement, primaryId);
+  setStageButton(els.actionProof, health?.stages?.proof, primaryId);
+}
+
 function setStageButton(btn, action, primaryId) {
   if (!btn) return;
   if (!action || action.hidden) {
@@ -206,7 +227,8 @@ function setStageButton(btn, action, primaryId) {
   }
   btn.hidden = false;
   btn.textContent = action.label;
-  btn.disabled = !action.enabled || actionBusy;
+  const keepEnabled = action.id === "stop-implement";
+  btn.disabled = !action.enabled || (actionBusy && !keepEnabled);
   btn.dataset.action = action.id;
   btn.title = action.hint ?? "";
   btn.classList.toggle("pill-btn-primary", Boolean(action.enabled && action.id === primaryId));
@@ -288,7 +310,7 @@ function renderActivity() {
   if (!els.activity) return;
   const lines = activityLines.length
     ? activityLines
-    : [{ level: "info", message: "No activity yet. Prove writes progress and errors here." }];
+    : [{ level: "info", message: "No activity yet. Implement and Prove write progress here." }];
   const key = lines.map((line) => `${line.level}\0${line.message}`).join("\n");
   const log = els.activity;
   const pinned = log.scrollHeight - log.scrollTop - log.clientHeight < 16;
@@ -366,7 +388,35 @@ els.next.addEventListener("click", () => {
 
 els.actionReady?.addEventListener("click", () => void runStageAction(els.actionReady.dataset.action));
 els.actionBuild?.addEventListener("click", () => void runStageAction(els.actionBuild.dataset.action));
+els.actionBuildIgnore?.addEventListener("click", () => void runStageAction(els.actionBuildIgnore.dataset.action));
+els.actionBuildStop?.addEventListener("click", () => void runStageAction(els.actionBuildStop.dataset.action));
 els.actionProof?.addEventListener("click", () => void runStageAction(els.actionProof.dataset.action));
+els.ignoreYes?.addEventListener("click", () => closeIgnoreDialog("yes"));
+els.ignoreNo?.addEventListener("click", () => closeIgnoreDialog("no"));
+els.ignoreCancel?.addEventListener("click", () => closeIgnoreDialog("cancel"));
+
+let ignoreDialogResolve = null;
+
+function closeIgnoreDialog(value) {
+  if (els.ignoreDialog?.open) els.ignoreDialog.close(value);
+}
+
+function askIgnoreBuild() {
+  if (!els.ignoreDialog) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    ignoreDialogResolve = resolve;
+    const onClose = () => {
+      els.ignoreDialog.removeEventListener("close", onClose);
+      const answer = els.ignoreDialog.returnValue;
+      const done = ignoreDialogResolve;
+      ignoreDialogResolve = null;
+      done?.(answer === "yes" ? true : answer === "no" ? false : null);
+    };
+    els.ignoreDialog.addEventListener("close", onClose);
+    els.ignoreDialog.returnValue = "";
+    els.ignoreDialog.showModal();
+  });
+}
 
 async function runStageAction(id) {
   actionNotice = "";
@@ -404,8 +454,57 @@ async function runStageAction(id) {
     await runNextAction("Checking…", "/api/check-jev");
     return;
   }
+  if (id === "stop-implement") {
+    actionNotice = "Stopping…";
+    els.hint.textContent = actionNotice;
+    try {
+      const res = await fetch("/api/stop-implement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const payload = await res.json();
+      if (payload.health || payload.packId) state = { ...state, ...payload };
+      if (Array.isArray(payload.activity)) activityLines = payload.activity;
+      actionNotice = payload.error ?? payload.message ?? "Owner stopped Implement.";
+    } catch (err) {
+      actionNotice = err instanceof Error ? err.message : "Stop failed.";
+    }
+    els.hint.textContent = actionNotice;
+    render();
+    return;
+  }
   if (id === "implement") {
-    await runNextAction("Launching…", "/api/implement", { adapter: "cursor" });
+    activityLines = [{ level: "info", message: "Implement started." }];
+    actionNotice = "Implement started.";
+    setMeter("build", "running");
+    renderActivity();
+    els.hint.textContent = actionNotice;
+    await runBackgroundAction("Implementing…", "/api/implement", { adapter: "cursor" }, "implement");
+    return;
+  }
+  if (id === "ignore-build") {
+    const successful = await askIgnoreBuild();
+    if (successful === null) return;
+    actionNotice = "Ignoring failed Build…";
+    els.hint.textContent = actionNotice;
+    const ignored = await runNextAction("Ignoring…", "/api/ignore-build", { successful });
+    if (ignored === false) return;
+    await runProveAction();
+    return;
+  }
+  if (id === "fix-from-proof") {
+    activityLines = [{ level: "info", message: "Fix from proof started." }];
+    actionNotice = "Fix from proof started.";
+    setMeter("build", "running");
+    renderActivity();
+    els.hint.textContent = actionNotice;
+    await runBackgroundAction(
+      "Fixing from proof…",
+      "/api/implement",
+      { adapter: "cursor", fromProof: true },
+      "implement",
+    );
     return;
   }
   if (id === "prove") {
@@ -507,9 +606,7 @@ async function runBackgroundAction(busyLabel, url, body, kind) {
   actionBusy = true;
   els.next.disabled = true;
   els.next.textContent = busyLabel;
-  setStageButton(els.actionReady, state.health?.stages?.ready, state.health?.nextAction?.id);
-  setStageButton(els.actionBuild, state.health?.stages?.build, state.health?.nextAction?.id);
-  setStageButton(els.actionProof, state.health?.stages?.proof, state.health?.nextAction?.id);
+  setStageButtons(state.health, state.health?.nextAction?.id);
   const poll = window.setInterval(() => {
     void refreshActivity();
   }, 750);
@@ -555,9 +652,7 @@ async function runNextAction(busyLabel, url, body) {
   actionBusy = true;
   els.next.disabled = true;
   els.next.textContent = busyLabel;
-  setStageButton(els.actionReady, state.health?.stages?.ready, state.health?.nextAction?.id);
-  setStageButton(els.actionBuild, state.health?.stages?.build, state.health?.nextAction?.id);
-  setStageButton(els.actionProof, state.health?.stages?.proof, state.health?.nextAction?.id);
+  setStageButtons(state.health, state.health?.nextAction?.id);
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -569,15 +664,41 @@ async function runNextAction(busyLabel, url, body) {
     if (Array.isArray(payload.activity)) activityLines = payload.activity;
     if (!res.ok || payload.error) {
       actionNotice = payload.error ?? "Request failed.";
-    } else if (payload.message) {
-      actionNotice = payload.message;
+      actionBusy = false;
+      render();
+      return false;
     }
+    if (payload.message) actionNotice = payload.message;
+    actionBusy = false;
+    render();
+    return true;
   } catch (err) {
     actionNotice = err instanceof Error ? err.message : "Request failed.";
+    actionBusy = false;
+    render();
+    return false;
   }
-  actionBusy = false;
+}
+
+async function recordStack(id) {
+  if (els.stackError) els.stackError.textContent = "";
+  const res = await fetch("/api/stack", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    if (els.stackError) els.stackError.textContent = body.error ?? "Could not record stack.";
+    return;
+  }
+  state = body;
+  actionNotice = "";
   render();
 }
+
+els.stackNextjs?.addEventListener("click", () => void recordStack("nextjs-default"));
+els.stackAmplify?.addEventListener("click", () => void recordStack("amplify-gen2"));
 
 els.createNew.addEventListener("click", async () => {
   els.createError.textContent = "";

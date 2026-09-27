@@ -7,7 +7,9 @@ import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { isRequirementId } from "./compile.js";
 import { adapterInstructions, ImplementDisabledError, ImplementLockedError } from "./implement.js";
-import { checkPack, compilePack, createPack, findRequirementsDir, implementPack, provePack, resolvePack } from "./pack.js";
+import { FixFromProofLockedError } from "./fix-from-proof.js";
+import { StackRequiredError, UnknownStackError } from "./stack.js";
+import { checkPack, compilePack, createPack, findRequirementsDir, finishImplement, implementPack, provePack, resolvePack } from "./pack.js";
 import { ProveLockedError } from "./proof.js";
 import { createAppState, createCockpitServer, refresh } from "./server.js";
 
@@ -82,13 +84,33 @@ async function main(command: string, rest: string[]): Promise<void> {
       throw new Error("No requirement pack here. Open a docs/requirements/<id> folder, or create one.");
     }
     const adapter = rest.includes("--adapter=manual") || rest[0] === "manual" ? "manual" : "cursor";
+    const stack = flagValue(rest, "stack");
+    const fromProof = rest.includes("--from-proof");
     try {
-      const launched = await implementPack(pack, { adapter });
-      console.log(`Build ${launched.result.health.build.state} — ${launched.message}`);
-      console.log(adapterInstructions(adapter, pack.implementBrief));
-      if (launched.result.health.build.state === "failed") process.exit(2);
+      const launched = await implementPack(pack, {
+        ...(stack ? { adapter, stack } : { adapter }),
+        ...(fromProof ? { fromProof: true } : {}),
+        onLogLine: (line) => console.log(line),
+      });
+      let result = launched.result;
+      let message = launched.message;
+      if (launched.launch?.finished) {
+        console.log(`Build running — ${message}`);
+        const done = await finishImplement(pack, launched.launch, adapter);
+        result = done.result;
+        message = done.message;
+      }
+      console.log(`Build ${result.health.build.state} — ${message}`);
+      console.log(adapterInstructions(adapter, fromProof ? pack.fixFromProofBrief : pack.implementBrief));
+      if (result.health.build.state === "failed") process.exit(2);
     } catch (err) {
-      if (err instanceof ImplementLockedError || err instanceof ImplementDisabledError) {
+      if (
+        err instanceof ImplementLockedError ||
+        err instanceof ImplementDisabledError ||
+        err instanceof FixFromProofLockedError ||
+        err instanceof StackRequiredError ||
+        err instanceof UnknownStackError
+      ) {
         console.error(err.message);
         process.exit(2);
       }
@@ -198,6 +220,13 @@ async function pickPort(start: number): Promise<number> {
     if (free) return port;
   }
   throw new Error("No free port near 4370.");
+}
+
+function flagValue(args: string[], name: string): string | undefined {
+  const prefix = `--${name}=`;
+  const hit = args.find((arg) => arg.startsWith(prefix));
+  if (!hit) return undefined;
+  return hit.slice(prefix.length);
 }
 
 function isFree(port: number): Promise<boolean> {

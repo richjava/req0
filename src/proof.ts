@@ -6,6 +6,7 @@ import { createMockJevClient, resolveJevClient, type JevClient } from "./jev.js"
 import type { Persona, PersonasResult } from "./personas.js";
 import type { QaCase, QaPlan } from "./qa-plan.js";
 import { specHash } from "./ready.js";
+import { buildAllowsProve } from "./stages.js";
 import type { RuntimeFixture } from "./runtime.js";
 import { inspectProductRepo } from "./stack.js";
 import type {
@@ -105,8 +106,8 @@ export function assertProveAllowed(result: CompileResult): void {
   if (result.health.ready.state !== "ready") {
     throw new ProveLockedError("Prove is locked until Ready is Ready.");
   }
-  if (result.health.build.owned !== false && result.health.build.state !== "succeeded") {
-    throw new ProveLockedError("Prove is locked until Build succeeded.");
+  if (!buildAllowsProve(result.health.build)) {
+    throw new ProveLockedError("Prove is locked until Build succeeded, or you Ignore a failed Build.");
   }
   if (!result.health.proof.runtime) {
     throw new ProveLockedError(

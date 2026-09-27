@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { parsePersonasYaml } from "./personas.js";
-import { applyReadyToHealth, evaluateBuild, evaluateReady, specHash } from "./ready.js";
+import {
+  applyReadyToHealth,
+  evaluateBuild,
+  evaluateReady,
+  followImplementPid,
+  followedImplementPids,
+  IMPLEMENT_INTERRUPTED,
+  specHash,
+  unfollowImplementPid,
+} from "./ready.js";
 import { readyBadge } from "./stages.js";
 import type { Health, JevRun, SpecAst } from "./types.js";
 
@@ -242,6 +251,16 @@ describe("scoreboard", () => {
     expect(before.nextAction.enabled).toBe(true);
     expect(before.stages?.ready.enabled).toBe(false);
     expect(before.stages?.build).toMatchObject({ id: "implement", label: "Implement", enabled: true });
+    const running = applyReadyToHealth(baseHealth({ state: "running" }), ready);
+    expect(running.nextAction).toMatchObject({ id: "stop-implement", label: "Stop", enabled: true });
+    expect(running.stages?.build.label).toBe("Implementing");
+    expect(running.stages?.build.enabled).toBe(false);
+    expect(running.stages?.stopImplement).toMatchObject({ id: "stop-implement", enabled: true });
+    expect(running.howThisIsGoing).toMatch(/Stop ends the run/);
+    const waiting = applyReadyToHealth({ ...baseHealth(), build: { state: "not_yet", needsStack: true } }, ready);
+    expect(waiting.nextAction.id).toBe("implement");
+    expect(waiting.nextAction.enabled).toBe(false);
+    expect(waiting.stages?.build.hint).toMatch(/req0\.json/);
     const after = applyReadyToHealth(baseHealth({ state: "succeeded", adapter: "manual" }), ready);
     expect(after.nextAction.id).toBe("prove");
     expect(after.nextAction.enabled).toBe(false);
@@ -266,6 +285,21 @@ describe("scoreboard", () => {
     );
     expect(reprove.stages?.proof.label).toBe("Re-prove");
     expect(reprove.nextAction.id).toBe("prove");
+    const failedProof = applyReadyToHealth(
+      {
+        ...baseHealth({ state: "succeeded", adapter: "manual" }),
+        proof: {
+          state: "failed",
+          runtime: true,
+          findings: [{ id: "proof.outcome.UC-001", specId: "UC-001", severity: "fail", message: "Approve missing." }],
+          message: "3 failed",
+        },
+      },
+      ready,
+    );
+    expect(failedProof.nextAction).toMatchObject({ id: "fix-from-proof", label: "Fix from proof", enabled: true });
+    expect(failedProof.stages?.build.label).toBe("Rebuild");
+    expect(failedProof.howThisIsGoing).toMatch(/Fix from proof/);
     const proved = applyReadyToHealth(
       {
         ...baseHealth({
@@ -279,6 +313,54 @@ describe("scoreboard", () => {
       ready,
     );
     expect(proved.howThisIsGoing).toBe("");
+  });
+
+  it("offers Ignore on a failed Build and unlocks Prove after it", () => {
+    const ready = evaluateReady({
+      spec,
+      specState: "valid",
+      personas,
+      hasApiKey: true,
+      jevRun: run([
+        { id: "rule.observable.BR-001", type: "noul", noul: 0.95 },
+        { id: "usecase.contradicts.UC-001", type: "noul", noul: 0.04 },
+        { id: "section.score.business-rules", type: "score", score: 2 },
+        { id: "section.score.use-cases", type: "score", score: 2 },
+        { id: "section.score.roles-permissions", type: "score", score: 2 },
+        { id: "pack.agent-ready", type: "noul", noul: 0.91 },
+      ]),
+    });
+    const failed = applyReadyToHealth(
+      {
+        ...baseHealth({ state: "failed", message: IMPLEMENT_INTERRUPTED }),
+        proof: { state: "not_yet", runtime: true, findings: [] },
+      },
+      ready,
+    );
+    expect(failed.nextAction.id).toBe("implement");
+    expect(failed.stages?.proof.enabled).toBe(false);
+    expect(failed.stages?.ignoreBuild).toMatchObject({ id: "ignore-build", label: "Ignore", enabled: true });
+    const ignoredFailed = applyReadyToHealth(
+      {
+        ...baseHealth({ state: "failed", ignored: true, message: IMPLEMENT_INTERRUPTED }),
+        proof: { state: "not_yet", runtime: true, findings: [] },
+      },
+      ready,
+    );
+    expect(ignoredFailed.nextAction.id).toBe("prove");
+    expect(ignoredFailed.nextAction.enabled).toBe(true);
+    expect(ignoredFailed.stages?.ignoreBuild).toBeUndefined();
+    expect(ignoredFailed.stages?.proof.enabled).toBe(true);
+    const markedOk = applyReadyToHealth(
+      {
+        ...baseHealth({ state: "succeeded", ignored: true, message: "Owner marked Build successful after Ignore." }),
+        proof: { state: "not_yet", runtime: true, findings: [] },
+      },
+      ready,
+    );
+    expect(markedOk.build.state).toBe("succeeded");
+    expect(markedOk.nextAction.id).toBe("prove");
+    expect(markedOk.stages?.ignoreBuild).toBeUndefined();
   });
 
   it("skips Implement and enables Prove when Build is not owned", () => {
@@ -337,5 +419,49 @@ describe("evaluateBuild", () => {
         at: "2026-01-01T00:00:00.000Z",
       }).state,
     ).toBe("failed");
+    expect(
+      evaluateBuild(spec, {
+        specHash: specHash(spec),
+        state: "failed",
+        adapter: "cursor",
+        at: "2026-01-01T00:00:00.000Z",
+        ignored: true,
+        message: IMPLEMENT_INTERRUPTED,
+      }),
+    ).toMatchObject({ state: "failed", ignored: true });
+  });
+
+  it("does not keep a running stamp after this process stops following the agent", () => {
+    expect(
+      evaluateBuild(spec, {
+        specHash: specHash(spec),
+        state: "running",
+        adapter: "cursor",
+        at: "2026-01-01T00:00:00.000Z",
+      }).state,
+    ).toBe("failed");
+    expect(
+      evaluateBuild(spec, {
+        specHash: specHash(spec),
+        state: "running",
+        adapter: "cursor",
+        at: "2026-01-01T00:00:00.000Z",
+      }).message,
+    ).toBe(IMPLEMENT_INTERRUPTED);
+    followImplementPid(4242);
+    try {
+      expect(
+        evaluateBuild(spec, {
+          specHash: specHash(spec),
+          state: "running",
+          adapter: "cursor",
+          at: "2026-01-01T00:00:00.000Z",
+          pid: 4242,
+        }).state,
+      ).toBe("running");
+    } finally {
+      unfollowImplementPid(4242);
+      followedImplementPids.clear();
+    }
   });
 });

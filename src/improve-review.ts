@@ -200,6 +200,9 @@ function gateStages(stages: StageBoard, hasDiff: boolean): StageBoard {
     },
     build: { ...stages.build, enabled: false },
     proof: { ...stages.proof, enabled: false },
+    ...(stages.fixFromProof ? { fixFromProof: { ...stages.fixFromProof, enabled: false } } : {}),
+    ...(stages.ignoreBuild ? { ignoreBuild: { ...stages.ignoreBuild, enabled: false } } : {}),
+    ...(stages.stopImplement ? { stopImplement: { ...stages.stopImplement, enabled: false } } : {}),
   };
 }
 

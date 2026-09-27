@@ -1,6 +1,22 @@
+import { fixFromProofAllowed } from "./fix-from-proof.js";
 import { NOUL_PASS } from "./gates.js";
 import { improveAllowed, improveHint } from "./improve.js";
-import type { Health, ReadyMeter, StageAction, StageBoard } from "./types.js";
+import { STACK_CHOICE_HINT } from "./stack.js";
+import type { BuildMeter, Health, ReadyMeter, StageAction, StageBoard } from "./types.js";
+
+export function buildAllowsProve(build: BuildMeter): boolean {
+  if (build.owned === false) return true;
+  if (build.state === "succeeded") return true;
+  return build.ignored === true;
+}
+
+export function ignoreBuildAllowed(health: Health, ready: ReadyMeter = health.ready): boolean {
+  if (health.build.owned === false) return false;
+  if (ready.state !== "ready") return false;
+  if (health.build.needsStack) return false;
+  if (health.build.state === "running") return false;
+  return health.build.state === "failed" && health.build.ignored !== true;
+}
 
 export function emptyStages(): StageBoard {
   return {
@@ -53,13 +69,18 @@ export function computeStages(health: Health, ready: ReadyMeter): StageBoard {
   const readyOk = ready.state === "ready";
   const implementOwned = health.build.owned !== false;
   const neverSucceeded = health.build.state === "not_yet" || health.build.state === "failed";
+  const needsStack = health.build.needsStack === true;
   const buildAction: StageAction = implementOwned
     ? {
         id: "implement",
-        label: neverSucceeded ? "Implement" : "Rebuild",
-        enabled: readyOk && health.build.state !== "running",
-        hint:
-          health.build.state === "failed"
+        label:
+          health.build.state === "running" ? "Implementing" : neverSucceeded ? "Implement" : "Rebuild",
+        enabled: readyOk && health.build.state !== "running" && !needsStack,
+        hint: needsStack
+          ? STACK_CHOICE_HINT
+          : health.build.state === "running"
+            ? "Cursor agent is running. Activity shows tools and messages as they happen."
+            : health.build.state === "failed"
             ? health.build.message
             : neverSucceeded
               ? "Starts a Cursor agent with derived/implement-brief.md. Use --adapter=manual to skip launch."
@@ -74,8 +95,7 @@ export function computeStages(health: Health, ready: ReadyMeter): StageBoard {
       };
 
   const firstProve = health.proof.state === "not_yet";
-  const buildReady = implementOwned ? health.build.state === "succeeded" : true;
-  const canProve = readyOk && buildReady && health.proof.runtime;
+  const canProve = readyOk && buildAllowsProve(health.build) && health.proof.runtime;
   const proofAction: StageAction = {
     id: "prove",
     label: firstProve ? "Prove" : "Re-prove",
@@ -83,7 +103,43 @@ export function computeStages(health: Health, ready: ReadyMeter): StageBoard {
     hint: proofHint(health),
   };
 
-  return { ready: readyAction, build: buildAction, proof: proofAction };
+  const canFix = fixFromProofAllowed(health, ready) && health.build.state !== "running";
+  const fixFromProof: StageAction | undefined = canFix
+    ? {
+        id: "fix-from-proof",
+        label: "Fix from proof",
+        enabled: true,
+        hint: "Starts a Cursor agent with the last proof-report.md and the implement brief. Does not edit requirement.md.",
+      }
+    : undefined;
+
+  const ignoreBuild: StageAction | undefined = ignoreBuildAllowed(health, ready)
+    ? {
+        id: "ignore-build",
+        label: "Ignore",
+        enabled: true,
+        hint: "Unlock Prove. You will be asked whether implementation succeeded.",
+      }
+    : undefined;
+
+  const stopImplement: StageAction | undefined =
+    implementOwned && health.build.state === "running"
+      ? {
+          id: "stop-implement",
+          label: "Stop",
+          enabled: true,
+          hint: "Stops the Cursor agent. Build stays failed until you Rebuild or Ignore.",
+        }
+      : undefined;
+
+  return {
+    ready: readyAction,
+    build: buildAction,
+    proof: proofAction,
+    ...(fixFromProof ? { fixFromProof } : {}),
+    ...(ignoreBuild ? { ignoreBuild } : {}),
+    ...(stopImplement ? { stopImplement } : {}),
+  };
 }
 
 export function primaryAction(health: Health, ready: ReadyMeter, stages: StageBoard): Health["nextAction"] {
@@ -99,9 +155,21 @@ export function primaryAction(health: Health, ready: ReadyMeter, stages: StageBo
     };
   }
   if (stages.ready.enabled) return stages.ready;
-  if (stages.build.enabled && (health.build.state === "not_yet" || health.build.state === "failed" || health.build.state === "stale")) {
+  const implementOwned = health.build.owned !== false;
+  const waitingForBuild =
+    implementOwned &&
+    !health.build.ignored &&
+    (health.build.state === "not_yet" ||
+      health.build.state === "failed" ||
+      health.build.state === "stale" ||
+      health.build.state === "running");
+  if (ready.state === "ready" && waitingForBuild) {
+    if (health.build.state === "running" && stages.stopImplement?.enabled) {
+      return stages.stopImplement;
+    }
     return stages.build;
   }
+  if (stages.fixFromProof?.enabled) return stages.fixFromProof;
   return stages.proof;
 }
 
@@ -109,6 +177,9 @@ function proofHint(health: Health): string | undefined {
   const proof = health.proof;
   if (!proof.runtime) {
     return "Blocked without fixtures/runtime.yaml (baseUrl and deterministic login).";
+  }
+  if (!buildAllowsProve(health.build)) {
+    return "Prove is locked until Build succeeded, or you Ignore a failed Build.";
   }
   if (proof.state === "passed") return "Proof passed. Click to re-run.";
   if (proof.state === "failed") return proof.message ?? "Proof failed. Click to re-run.";

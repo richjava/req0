@@ -1,9 +1,12 @@
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
 import type { Server } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { createPack, packPaths } from "./pack.js";
 import { createAppState, createCockpitServer } from "./server.js";
+import { readReq0Config } from "./stack.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cockpitDir = path.join(root, "cockpit");
@@ -51,12 +54,44 @@ describe("cockpit reload contract", () => {
     const html = await page.text();
     expect(html).toMatch(/app\.js\?v=\d+/);
     expect(html).toMatch(/no-store/);
+    expect(html).toContain("action-build-ignore");
+    expect(html).toContain("action-build-stop");
+    expect(html).toContain("Was implementation successful?");
     await expect(state.json()).resolves.toMatchObject({ busy: null });
+  });
+
+  it("records a stack on POST /api/stack", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "req0-api-stack-"));
+    const pack = packPaths(path.join(parent, "docs/requirements/demo-pack"));
+    try {
+      await createPack(pack.root);
+      const { url } = await listen(createAppState(parent, pack));
+      const before = await (await fetch(`${url}/api/state`)).json();
+      expect(before.productRepo.empty).toBe(true);
+      expect(before.productRepo.recorded).toBe(false);
+      const html = await (await fetch(`${url}/`)).text();
+      expect(html).toContain("stack-bar");
+      const res = await fetch(`${url}/api/stack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: "amplify-gen2" }),
+      });
+      expect(res.status).toBe(200);
+      const after = await res.json();
+      expect(after.productRepo.recorded).toBe(true);
+      expect(after.productRepo.stack.id).toBe("amplify-gen2");
+      expect(after.productRepo.empty).toBe(true);
+      expect((await readReq0Config(parent))?.stack?.id).toBe("amplify-gen2");
+      expect(await readFile(path.join(parent, ".env.example"), "utf8")).toContain("AWS_REGION=");
+      expect(await readFile(path.join(parent, ".env.example"), "utf8")).not.toContain("AKIA");
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
   });
 });
 
-async function listen(): Promise<{ url: string }> {
-  const state = createAppState(root, null);
+async function listen(appState = createAppState(root, null)): Promise<{ url: string }> {
+  const state = appState;
   server = createCockpitServer(state);
   await new Promise<void>((resolve, reject) => {
     server!.once("error", reject);

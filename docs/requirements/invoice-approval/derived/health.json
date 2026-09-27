@@ -13,7 +13,8 @@
     "jevCurrent": false
   },
   "build": {
-    "state": "not_yet"
+    "state": "not_yet",
+    "needsStack": true
   },
   "proof": {
     "state": "not_yet",
@@ -37,7 +38,7 @@
       "id": "implement",
       "label": "Implement",
       "enabled": false,
-      "hint": "Starts a Cursor agent with derived/implement-brief.md. Use --adapter=manual to skip launch."
+      "hint": "Choose a stack before Implement. Write it in req0.json, pass --stack=nextjs-default or --stack=amplify-gen2, or pick one in the cockpit."
     },
     "proof": {
       "id": "prove",

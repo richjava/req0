@@ -3,7 +3,8 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasJevAccess, JevRequestError, JevUnavailableError } from "./jev.js";
-import { implementPack, launchImprove, writeImproveBrief, checkPack, compilePack, createPack, findRequirementsDir, listPacks, provePack, writeRequirement } from "./pack.js";
+import { implementPack, finishImplement, ignoreBuild, launchImprove, stopImplement, StopImplementLockedError, writeImproveBrief, checkPack, compilePack, createPack, findRequirementsDir, listPacks, provePack, writeRequirement } from "./pack.js";
+import { IgnoreBuildLockedError } from "./ready.js";
 import { ImproveLockedError } from "./improve.js";
 import {
   acceptImproveReview,
@@ -13,7 +14,8 @@ import {
   ImproveReviewPendingError,
   rejectImproveReview,
 } from "./improve-review.js";
-import { inspectProductRepo } from "./stack.js";
+import type { LaunchAdapterResult } from "./implement.js";
+import { inspectProductRepo, recordStack, UnknownStackError } from "./stack.js";
 import type { PackPaths } from "./pack.js";
 import type { ActivityLevel, ActivityLine, CompileResult } from "./types.js";
 
@@ -24,11 +26,12 @@ export type AppState = {
   pack: PackPaths | null;
   last: CompileResult | null;
   activity: ActivityLine[];
-  busy: "prove" | "improve" | null;
+  busy: "prove" | "improve" | "implement" | null;
+  implementLaunch: LaunchAdapterResult | null;
 };
 
 export function createAppState(cwd: string, pack: PackPaths | null): AppState {
-  return { cwd, pack, last: null, activity: [], busy: null };
+  return { cwd, pack, last: null, activity: [], busy: null, implementLaunch: null };
 }
 
 export async function refresh(state: AppState): Promise<CompileResult | null> {
@@ -214,16 +217,67 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/stack") {
+      if (!state.pack) {
+        sendJson(res, { error: "No pack selected." }, 400);
+        return;
+      }
+      const repo = await inspectProductRepo(state.pack.root);
+      if (!repo.root) {
+        sendJson(res, { error: "No product repo root, so the stack cannot be recorded." }, 400);
+        return;
+      }
+      const body = await readJson(req);
+      try {
+        await recordStack(repo.root, String(body["id"] ?? ""));
+        await refresh(state);
+        await sendJson(res, await snapshot(state));
+      } catch (err) {
+        sendJson(
+          res,
+          { error: err instanceof Error ? err.message : "Could not record stack." },
+          err instanceof UnknownStackError ? 400 : 409,
+        );
+      }
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/implement") {
       if (!state.pack) {
         sendJson(res, { error: "No pack selected." }, 400);
         return;
       }
+      if (state.busy === "implement") {
+        await sendJson(res, { ...(await snapshot(state)), started: true, message: "Implement is already running." });
+        return;
+      }
       const body = await readJson(req);
       const adapter = body["adapter"] === "manual" ? "manual" : "cursor";
+      const stack = typeof body["stack"] === "string" && body["stack"].trim() ? String(body["stack"]) : undefined;
+      const fromProof = body["fromProof"] === true;
       try {
-        const launched = await implementPack(state.pack, { adapter });
+        state.activity = [];
+        pushActivity(state, fromProof ? "Fix from proof started." : "Implement started.");
+        const launched = await implementPack(state.pack, {
+          ...(stack ? { adapter, stack } : { adapter }),
+          ...(fromProof ? { fromProof: true } : {}),
+          onLogLine: (line) => pushActivity(state, line),
+        });
         state.last = launched.result;
+        if (launched.launch?.finished) {
+          state.busy = "implement";
+          state.implementLaunch = launched.launch;
+          pushActivity(state, launched.message);
+          await yieldEventLoop();
+          await sendJson(res, {
+            ...(await snapshot(state)),
+            started: true,
+            message: launched.message,
+          });
+          void runImplement(state, state.pack, launched.launch, adapter);
+          return;
+        }
+        pushActivity(state, launched.message, launched.result.health.build.state === "failed" ? "error" : "ok");
         await sendJson(res, { ...(await snapshot(state)), message: launched.message });
       } catch (err) {
         sendJson(
@@ -233,6 +287,61 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
             error: err instanceof Error ? err.message : "Implement failed.",
           },
           409,
+        );
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/stop-implement") {
+      if (!state.pack) {
+        sendJson(res, { error: "No pack selected." }, 400);
+        return;
+      }
+      if (!state.implementLaunch || state.busy !== "implement") {
+        sendJson(res, { ...(await snapshot(state)), error: "Implement is not running." }, 409);
+        return;
+      }
+      try {
+        const stopped = await stopImplement(state.pack, state.implementLaunch);
+        state.last = stopped.result;
+        pushActivity(state, stopped.message, "ok");
+        await sendJson(res, { ...(await snapshot(state)), message: stopped.message });
+      } catch (err) {
+        sendJson(
+          res,
+          {
+            ...(await snapshot(state)),
+            error: err instanceof Error ? err.message : "Stop failed.",
+          },
+          err instanceof StopImplementLockedError ? 409 : 500,
+        );
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/ignore-build") {
+      if (!state.pack) {
+        sendJson(res, { error: "No pack selected." }, 400);
+        return;
+      }
+      const body = await readJson(req);
+      if (typeof body["successful"] !== "boolean") {
+        sendJson(res, { error: "successful must be true or false." }, 400);
+        return;
+      }
+      try {
+        const ignored = await ignoreBuild(state.pack, body["successful"]);
+        state.last = ignored.result;
+        pushActivity(state, ignored.message, "ok");
+        await sendJson(res, { ...(await snapshot(state)), message: ignored.message });
+      } catch (err) {
+        sendJson(
+          res,
+          {
+            ...(await snapshot(state)),
+            error: err instanceof Error ? err.message : "Ignore failed.",
+          },
+          err instanceof IgnoreBuildLockedError ? 409 : 500,
         );
       }
       return;
@@ -351,6 +460,24 @@ async function runImprove(state: AppState, pack: PackPaths, adapter: "cursor" | 
     pushActivity(state, err instanceof Error ? err.message : "Improve failed.", "error");
   } finally {
     state.busy = null;
+  }
+}
+
+async function runImplement(
+  state: AppState,
+  pack: PackPaths,
+  launch: LaunchAdapterResult,
+  adapter: "cursor" | "manual",
+): Promise<void> {
+  try {
+    const done = await finishImplement(pack, launch, adapter);
+    if (state.pack?.root === pack.root) state.last = done.result;
+    pushActivity(state, done.message, done.result.health.build.state === "failed" ? "error" : "ok");
+  } catch (err) {
+    pushActivity(state, err instanceof Error ? err.message : "Implement failed.", "error");
+  } finally {
+    if (state.busy === "implement") state.busy = null;
+    if (state.implementLaunch === launch) state.implementLaunch = null;
   }
 }
 

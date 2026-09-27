@@ -141,6 +141,7 @@ body {
 .topbar { order: 0; }
 .pills { order: 1; }
 .create-bar { order: 2; }
+#stack-bar { order: 2; }
 .activity-panel { order: 3; }
 #workspace { order: 4; }
 #workspace.is-review { order: 3; }
@@ -526,6 +527,30 @@ body {
   font-size: var(--text-12);
 }
 
+.confirm-dialog {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  padding: var(--space-4);
+  max-width: 22rem;
+}
+
+.confirm-dialog::backdrop {
+  background: rgb(0 0 0 / 0.35);
+}
+
+.confirm-dialog p {
+  margin: 0 0 var(--space-4);
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
 @media (max-width: 768px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -538,7 +563,8 @@ body {
   }
 
   .topbar,
-  .create-bar {
+  .create-bar,
+  #stack-bar {
     flex-direction: column;
     align-items: stretch;
   }

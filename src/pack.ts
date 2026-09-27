@@ -1,7 +1,19 @@
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile, readdir, access, appendFile } from "node:fs/promises";
 import path from "node:path";
 import { compileMarkdown, healthToStatusMarkdown, isRequirementId } from "./compile.js";
-import { assertImplementAllowed, ImplementDisabledError, improvePrompt, launchAdapter } from "./implement.js";
+import {
+  assertImplementAllowed,
+  ImplementDisabledError,
+  fixFromProofPrompt,
+  implementPrompt,
+  improvePrompt,
+  IMPLEMENT_STOPPED,
+  launchAdapter,
+  requestImplementStop,
+  type LaunchAdapterResult,
+} from "./implement.js";
+import { assertFixFromProofAllowed, emitFixFromProofBrief, FixFromProofLockedError } from "./fix-from-proof.js";
 import { assertImproveAllowed, emitImproveBrief, improveFindings } from "./improve.js";
 import { clearImproveLog, readImproveLog, recordImprovePending } from "./improve-log.js";
 import { beginImproveReview, ImproveReviewPendingError, readImproveSnapshot } from "./improve-review.js";
@@ -19,10 +31,30 @@ import {
   ProveLockedError,
   type ProofDriver,
 } from "./proof.js";
-import { applyReadyToHealth, attachReady, evaluateBuild, specHash } from "./ready.js";
+import {
+  applyReadyToHealth,
+  attachReady,
+  evaluateBuild,
+  followImplementPid,
+  IMPLEMENT_INTERRUPTED,
+  implementProcessGone,
+  IgnoreBuildLockedError,
+  isFollowedImplement,
+  specHash,
+  unfollowImplementPid,
+} from "./ready.js";
+import { ignoreBuildAllowed } from "./stages.js";
 import { parseRuntimeYaml, type RuntimeResult } from "./runtime.js";
-import { DEFAULT_STACK, inspectProductRepo, writeReq0Config } from "./stack.js";
-import { EMPTY_TEMPLATE, PERSONAS_STUB } from "./template.js";
+import {
+  inspectProductRepo,
+  needsStackChoice,
+  resolveStackId,
+  StackRequiredError,
+  UnknownStackError,
+  writeAmplifyEnvExampleIfMissing,
+  writeReq0Config,
+} from "./stack.js";
+import { EMPTY_TEMPLATE, PERSONAS_STUB, RUNTIME_STUB } from "./template.js";
 import type { AdapterId, BuildRun, CompileResult, JevRun, ProgressFn, ProofRun, SpecAst } from "./types.js";
 
 export const REQUIREMENT_FILE = "requirement.md";
@@ -41,6 +73,7 @@ export type PackPaths = {
   jevPack: string;
   jevRun: string;
   implementBrief: string;
+  fixFromProofBrief: string;
   improveBrief: string;
   improveSnapshot: string;
   improveLog: string;
@@ -67,6 +100,7 @@ export function packPaths(root: string): PackPaths {
     jevPack: path.join(derived, "jev-pack.json"),
     jevRun: path.join(derived, "jev-run.json"),
     implementBrief: path.join(derived, "implement-brief.md"),
+    fixFromProofBrief: path.join(derived, "fix-from-proof-brief.md"),
     improveBrief: path.join(derived, "improve-brief.md"),
     improveSnapshot: path.join(derived, "improve-snapshot.json"),
     improveLog: path.join(derived, "improve-log.json"),
@@ -162,6 +196,9 @@ export async function compilePack(paths: PackPaths): Promise<CompileResult> {
   if (result.spec) result = { ...result, jevPack: emitJevPack(result.spec) };
   const personas = await loadPersonas(paths);
   const repo = await inspectProductRepo(paths.root);
+  if (repo.root && repo.recorded) {
+    await writeAmplifyEnvExampleIfMissing(repo.root, repo.stack);
+  }
   if (result.spec) {
     result = {
       ...result,
@@ -184,8 +221,25 @@ export async function compilePack(paths: PackPaths): Promise<CompileResult> {
     result.health.ready = { ...result.health.ready, alreadyImproved: improved };
   }
   const buildRun = await readBuildRun(paths);
+  if (
+    buildRun?.state === "running" &&
+    !isFollowedImplement(buildRun.pid) &&
+    implementProcessGone(buildRun.pid)
+  ) {
+    await writeBuildRun(paths, {
+      specHash: buildRun.specHash,
+      state: "failed",
+      adapter: buildRun.adapter,
+      at: new Date().toISOString(),
+      message: IMPLEMENT_INTERRUPTED,
+    });
+  }
+  const latestBuildRun = await readBuildRun(paths);
   result.health.build = repo.implement
-    ? evaluateBuild(result.spec, buildRun)
+    ? {
+        ...evaluateBuild(result.spec, latestBuildRun),
+        needsStack: needsStackChoice(repo),
+      }
     : {
         state: "not_yet",
         owned: false,
@@ -285,8 +339,20 @@ export async function createPack(root: string): Promise<PackPaths> {
   } catch {
     await writeFile(paths.personas, PERSONAS_STUB, "utf8");
   }
+  await writeRuntimeStubIfMissing(paths);
   await compilePack(paths);
   return paths;
+}
+
+export async function writeRuntimeStubIfMissing(paths: PackPaths): Promise<boolean> {
+  try {
+    await access(paths.runtime);
+    return false;
+  } catch {
+    await mkdir(path.dirname(paths.runtime), { recursive: true });
+    await writeFile(paths.runtime, RUNTIME_STUB, "utf8");
+    return true;
+  }
 }
 
 async function readBuildRun(paths: PackPaths): Promise<BuildRun | null> {
@@ -301,28 +367,156 @@ async function readBuildRun(paths: PackPaths): Promise<BuildRun | null> {
 
 export async function implementPack(
   paths: PackPaths,
-  options: { adapter?: AdapterId } = {},
-): Promise<{ result: CompileResult; message: string }> {
+  options: { adapter?: AdapterId; stack?: string; fromProof?: boolean; onLogLine?: (line: string) => void } = {},
+): Promise<{ result: CompileResult; message: string; launch?: LaunchAdapterResult }> {
   const compiled = await compilePack(paths);
   assertImplementAllowed(compiled);
+  if (options.fromProof) {
+    assertFixFromProofAllowed(compiled.health, compiled.health.ready);
+    if (!compiled.spec) throw new FixFromProofLockedError();
+  }
   const repo = await inspectProductRepo(paths.root);
   if (!repo.implement) throw new ImplementDisabledError();
+  await writeRuntimeStubIfMissing(paths);
   const adapter = options.adapter ?? "cursor";
-  const stack = repo.recorded ? repo.stack : DEFAULT_STACK;
+  const requested = options.stack !== undefined ? resolveStackId(options.stack) : null;
+  if (options.stack !== undefined && !requested) throw new UnknownStackError(options.stack);
+  const stack = requested ?? (repo.recorded ? repo.stack : null);
+  if (!stack && needsStackChoice(repo)) throw new StackRequiredError();
   if (repo.root) {
-    await writeReq0Config(repo.root, { adapter, stack });
+    await writeReq0Config(repo.root, stack ? { adapter, stack } : { adapter });
+    if (stack) await writeAmplifyEnvExampleIfMissing(repo.root, stack);
   }
-  const launch = await launchAdapter(adapter, repo.root, paths.implementBrief);
-  const run: BuildRun = {
+  let briefPath = paths.implementBrief;
+  let prompt = implementPrompt(paths.implementBrief, stack?.id ?? repo.stack.id);
+  if (options.fromProof && compiled.spec) {
+    const brief = emitFixFromProofBrief({
+      spec: compiled.spec,
+      proof: compiled.health.proof,
+      reportPath: "derived/proof-report.md",
+      implementBriefPath: "derived/implement-brief.md",
+    });
+    await mkdir(paths.derived, { recursive: true });
+    await writeFile(paths.fixFromProofBrief, brief, "utf8");
+    briefPath = paths.fixFromProofBrief;
+    prompt = fixFromProofPrompt(paths.fixFromProofBrief, paths.proofReport, paths.implementBrief);
+  }
+  const launch = await launchAdapter(adapter, repo.root, briefPath, {
+    onLogLine: options.onLogLine,
+    prompt,
+  });
+  const following = launch.ok && adapter === "cursor" && Boolean(launch.finished);
+  if (following) followImplementPid(launch.child?.pid);
+  await writeBuildRun(paths, {
     specHash: compiled.spec ? specHash(compiled.spec) : "",
-    state: launch.ok ? "succeeded" : "failed",
+    state: !launch.ok ? "failed" : following ? "running" : "succeeded",
     adapter,
     at: new Date().toISOString(),
     message: launch.message,
+    ...(following && launch.child?.pid ? { pid: launch.child.pid } : {}),
+  });
+  return { result: await compilePack(paths), message: launch.message, launch };
+}
+
+export async function finishImplement(
+  paths: PackPaths,
+  launch: LaunchAdapterResult,
+  adapter: AdapterId,
+): Promise<{ result: CompileResult; message: string }> {
+  const done = launch.finished ? await launch.finished : { code: launch.ok ? 0 : 1 };
+  unfollowImplementPid(launch.child?.pid);
+  const compiled = await compilePack(paths);
+  const stopped = launch.stop?.reason;
+  const ok = !stopped && launch.ok && done.code === 0;
+  const message = stopped
+    ? stopped
+    : ok
+      ? "Cursor agent finished. Build Succeeded is not proof the app boots."
+      : `Cursor agent exited (${done.code ?? "unknown"}). ${tailImplementLog(paths)}`.trim();
+  await writeBuildRun(paths, {
+    specHash: compiled.spec ? specHash(compiled.spec) : "",
+    state: ok ? "succeeded" : "failed",
+    adapter,
+    at: new Date().toISOString(),
+    message,
+  });
+  return { result: await compilePack(paths), message };
+}
+
+export class StopImplementLockedError extends Error {
+  readonly code = "stop_implement_gate";
+
+  constructor(message = "Stop is only while Implement is running.") {
+    super(message);
+    this.name = "StopImplementLockedError";
+  }
+}
+
+export async function stopImplement(
+  paths: PackPaths,
+  launch: LaunchAdapterResult,
+  reason = IMPLEMENT_STOPPED,
+): Promise<{ result: CompileResult; message: string }> {
+  if (!launch.child && !launch.finished) {
+    throw new StopImplementLockedError();
+  }
+  const stop = launch.stop ?? (launch.stop = {});
+  requestImplementStop(launch.child, stop, reason);
+  const compiled = await compilePack(paths);
+  await writeBuildRun(paths, {
+    specHash: compiled.spec ? specHash(compiled.spec) : "",
+    state: "failed",
+    adapter: "cursor",
+    at: new Date().toISOString(),
+    message: reason,
+  });
+  return { result: await compilePack(paths), message: reason };
+}
+
+export async function ignoreBuild(
+  paths: PackPaths,
+  successful: boolean,
+): Promise<{ result: CompileResult; message: string }> {
+  const compiled = await compilePack(paths);
+  if (!ignoreBuildAllowed(compiled.health)) {
+    throw new IgnoreBuildLockedError();
+  }
+  const previous = await readBuildRun(paths);
+  await writeBuildRun(paths, {
+    specHash: compiled.spec ? specHash(compiled.spec) : previous?.specHash ?? "",
+    state: successful ? "succeeded" : "failed",
+    adapter: previous?.adapter ?? "cursor",
+    at: new Date().toISOString(),
+    message: successful
+      ? "Owner marked Build successful after Ignore."
+      : previous?.message ?? "Owner ignored this failed Build.",
+    ignored: true,
+  });
+  const result = await compilePack(paths);
+  return {
+    result,
+    message: successful
+      ? "Build marked successful. Prove is unlocked."
+      : "Build stays failed. Prove is unlocked.",
   };
+}
+
+async function writeBuildRun(paths: PackPaths, run: BuildRun): Promise<void> {
   await mkdir(paths.derived, { recursive: true });
   await writeFile(paths.buildRun, `${JSON.stringify(run, null, 2)}\n`, "utf8");
-  return { result: await compilePack(paths), message: launch.message };
+}
+
+function tailImplementLog(paths: PackPaths): string {
+  try {
+    return readFileSync(path.join(paths.derived, "implement-agent.log"), "utf8")
+      .trim()
+      .split(/\r?\n/)
+      .slice(-3)
+      .join(" ")
+      .slice(0, 280);
+  } catch {
+    return "";
+  }
 }
 
 export async function writeImproveBrief(
@@ -464,5 +658,6 @@ export async function provePack(
         ? `Proof needs review (${review} case${review === 1 ? "" : "s"}).`
         : `Proof passed (${run.cases.length} case${run.cases.length === 1 ? "" : "s"}).`;
   onProgress(message, !run.boot.ok || failed ? "error" : review ? "info" : "ok");
+  await writing;
   return { result, message };
 }

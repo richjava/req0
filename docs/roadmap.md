@@ -40,7 +40,7 @@ No API key (`TYPESAFE_API_KEY`) → Ready stays **Not yet**. Persona blockers st
 
 Portable `implement-brief.md`. Adapters: **Cursor launch** and **generic manual** only. Empty repo = no customer app at repo root (Req0’s own `package.json` does not count). Stack recorded in `req0.json` when Implement actually runs. Build Succeeded ≠ app boots.
 
-Implement stays **locked until Ready is Ready**. When Ready, `req0 implement` and the cockpit **Implement** button start a Cursor agent in the product repo, with `derived/implement-brief.md` in the prompt. `--adapter=manual` only records the run. Empty repo records the default stack in `req0.json`. `"implement": false` in `req0.json` turns the stage off: no build stamp, Implement hidden, Prove uses Ready + runtime. Build Succeeded is not proof the app boots.
+Implement stays **locked until Ready is Ready**. When Ready, `req0 implement` and the cockpit **Implement** button start a Cursor agent in the product repo, with `derived/implement-brief.md` in the prompt. `--adapter=manual` only records the run. Empty repo with no recorded stack refuses Implement until `req0.json`, `--stack=`, or the cockpit records one. `"implement": false` in `req0.json` turns the stage off: no build stamp, Implement hidden, Prove uses Ready + runtime. Build Succeeded is not proof the app boots.
 
 **Shipped:** emit `derived/implement-brief.md` on a valid compile, empty-vs-existing product-repo detection, Cursor agent launch + manual skip, `derived/build-run.json`, Implement enabled only after Ready.
 
@@ -50,7 +50,7 @@ Work lives in the **Req0** repo. The app under test is the **product repo** (for
 
 ### Gate
 
-Prove stays **disabled** until Ready is Ready and `fixtures/runtime.yaml` parses. Build succeeded is also required unless `req0.json` sets `"implement": false`. Missing or invalid runtime fails closed: Proof stays **Not yet**, next action is still Prove, button off. Hint names the file. Personas stay in `fixtures/personas.yaml`; runtime does not duplicate passwords.
+Prove stays **disabled** until Ready is Ready and `fixtures/runtime.yaml` parses. Build succeeded is also required unless `req0.json` sets `"implement": false` or the owner Ignores a failed Build. Create and Implement write a stub if the file is missing so the gate can open after Ready; the agent must still point `baseUrl` at the real app. Invalid runtime fails closed: Proof stays **Not yet**, next action is still Prove, button off. Hint names the file. Personas stay in `fixtures/personas.yaml`; runtime does not duplicate passwords.
 
 ### `fixtures/runtime.yaml`
 

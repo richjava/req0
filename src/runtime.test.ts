@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseRuntimeYaml } from "./runtime.js";
+import { RUNTIME_STUB } from "./template.js";
 
 const VALID = `baseUrl: http://127.0.0.1:3000
 startCommand: npm run dev
@@ -12,6 +13,14 @@ login:
 `;
 
 describe("parseRuntimeYaml", () => {
+  it("parses the Create/Implement stub", () => {
+    const result = parseRuntimeYaml(RUNTIME_STUB);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.runtime.baseUrl).toBe("http://127.0.0.1:3000");
+    expect(result.runtime.login.email).toBe("#email");
+  });
+
   it("parses baseUrl, startCommand, resetCommand, and login selectors", () => {
     const result = parseRuntimeYaml(VALID);
     expect(result).toEqual({

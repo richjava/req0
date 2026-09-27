@@ -10,7 +10,7 @@ The compiler in `src/compile.ts` is **strict and deterministic**. It does not us
 docs/requirements/<requirement-id>/
   requirement.md
   fixtures/personas.yaml
-  fixtures/runtime.yaml    # Milestone 4; required to enable Prove (baseUrl + login)
+  fixtures/runtime.yaml    # Prove gate. Create/Implement write a stub if missing; the agent sets baseUrl/start/reset to match the app
   context/                 # Milestone 5; screenshots
   derived/                 # generated; do not hand-edit
     spec.json
@@ -99,7 +99,7 @@ Personas may be stubbed while Spec is Valid. Ready requires a persona (`email`) 
 
 ## Runtime fixture (Milestone 4)
 
-Prove is blocked without `fixtures/runtime.yaml`. Missing or invalid file fails closed. Schema:
+Prove is blocked without `fixtures/runtime.yaml`. Missing or invalid file fails closed. Create and Implement write a parseable stub if the file is missing; the agent must set `baseUrl`, `startCommand`, and `resetCommand` to the app. Schema:
 
 ```yaml
 baseUrl: http://127.0.0.1:3000

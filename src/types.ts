@@ -83,6 +83,12 @@ export type StageBoard = {
   ready: StageAction;
   build: StageAction;
   proof: StageAction;
+  /** Primary after a failed or review proof. Rebuild stays on the build pill. */
+  fixFromProof?: StageAction;
+  /** Shown on a failed Build so the owner can unlock Prove. */
+  ignoreBuild?: StageAction;
+  /** Shown while Implement is running. */
+  stopImplement?: StageAction;
 };
 
 export type ReadyState = "not_yet" | "blocked" | "ready";
@@ -187,7 +193,11 @@ export type BuildMeter = {
   /** False when req0.json sets implement: false. Prove does not need a build stamp. */
   owned?: boolean;
   adapter?: AdapterId;
+  /** Empty product repo with no stack in req0.json. Implement stays off until one is recorded. */
+  needsStack?: boolean;
   message?: string;
+  /** Owner ignored a failed Build so Prove can run. */
+  ignored?: boolean;
 };
 
 export type BuildRun = {
@@ -196,6 +206,10 @@ export type BuildRun = {
   adapter: AdapterId;
   at: string;
   message?: string;
+  /** Cursor agent pid this Req0 process is following. Ignored after restart. */
+  pid?: number;
+  /** Owner chose Ignore. Prove may run even if state is failed. */
+  ignored?: boolean;
 };
 
 export type ProofState = "not_yet" | "passed" | "failed" | "needs_review" | "stale";
