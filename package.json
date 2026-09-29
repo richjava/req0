@@ -1,5 +1,5 @@
 {
-  "name": "req0",
+  "name": "@richjava/req0",
   "version": "0.1.0",
   "description": "Requirement operating system: spec packs, a local cockpit, Jev, coding-agent implement, and browser proof.",
   "license": "MIT",
@@ -27,6 +27,9 @@
     "cockpit",
     "jev"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.cli.json",
     "build:cockpit": "node scripts/build-markdown-editor.mjs",

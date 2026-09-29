@@ -301,6 +301,7 @@ export type ProofRun = {
 };
 
 export type ActivityLevel = "info" | "ok" | "error";
+export type ActivityChannel = "implement" | "prove";
 
 export type ActivityLine = {
   at: string;

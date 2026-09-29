@@ -1,6 +1,6 @@
 # Req0 documentation
 
-Install the CLI with `npm install -g req0` or `npx req0 start`. See the [root README](../README.md) for setup.
+Install the CLI with `npm install -g @richjava/req0` or `npx @richjava/req0 start`. See the [root README](../README.md) for setup.
 
 This `docs/` tree has two different jobs. Do not mix them.
 

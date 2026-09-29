@@ -17,13 +17,13 @@ Req0 is a CLI plus a thin HTML cockpit. It is not a hosted SaaS.
 Node.js **22.15** or newer.
 
 ```bash
-npm install -g req0
+npm install -g @richjava/req0
 ```
 
 Or run without a global install:
 
 ```bash
-npx req0 start
+npx @richjava/req0 start
 ```
 
 You can open the cockpit and compile a spec with that alone. **Judgment, Implement, and Prove need Jev:** set `TYPESAFE_API_KEY` in the product repo’s `.env` (TypeSafe System One). Without the key, Check fails closed and Ready stays Not yet.

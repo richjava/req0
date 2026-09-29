@@ -31,6 +31,8 @@ describe("product repo detection", () => {
     try {
       await writeFile(path.join(dir, "package.json"), `${JSON.stringify({ name: "req0" }, null, 2)}\n`);
       expect(await hasCustomerApp(dir)).toBe(false);
+      await writeFile(path.join(dir, "package.json"), `${JSON.stringify({ name: "@richjava/req0" }, null, 2)}\n`);
+      expect(await hasCustomerApp(dir)).toBe(false);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

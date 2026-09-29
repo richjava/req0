@@ -195,6 +195,10 @@ export async function writeAmplifyEnvExampleIfMissing(
   }
 }
 
+function isReq0CliPackageName(name: string | undefined): boolean {
+  return name === "req0" || name === "@richjava/req0";
+}
+
 export async function hasCustomerApp(repoRoot: string): Promise<boolean> {
   for (const file of APP_MANIFESTS) {
     try {
@@ -206,7 +210,7 @@ export async function hasCustomerApp(repoRoot: string): Promise<boolean> {
   }
   try {
     const pkg = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8")) as { name?: string };
-    return pkg.name !== "req0";
+    return !isReq0CliPackageName(pkg.name);
   } catch {
     return false;
   }

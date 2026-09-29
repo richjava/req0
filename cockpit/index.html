@@ -134,7 +134,7 @@
                 </div>
               </div>
               <p class="nav-label">Activity</p>
-              <ol id="implement-activity" class="list-rows activity-log"></ol>
+              <ol id="implement-activity" class="list-rows activity-log activity-log-main"></ol>
             </section>
 
             <section class="panel stage-view hidden" id="view-qa" data-view="qa" hidden>
@@ -145,10 +145,21 @@
                   <button type="button" class="pill-btn cta" id="action-fix-proof" hidden disabled></button>
                 </div>
               </div>
-              <p class="nav-label">Report</p>
-              <div id="proof-report" class="proof-report md-preview"></div>
-              <p class="nav-label">Activity</p>
-              <ol id="qa-activity" class="list-rows activity-log"></ol>
+              <div class="qa-tab-bar hidden" id="qa-tabs" role="tablist" hidden>
+                <button type="button" class="qa-tab is-active" role="tab" id="qa-tab-activity" aria-selected="true" aria-controls="qa-activity-panel">
+                  Activity
+                </button>
+                <button type="button" class="qa-tab" role="tab" id="qa-tab-report" aria-selected="false" aria-controls="qa-report-panel">
+                  Report
+                </button>
+              </div>
+              <p class="nav-label" id="qa-activity-label">Activity</p>
+              <div id="qa-activity-panel">
+                <ol id="qa-activity" class="list-rows activity-log activity-log-main"></ol>
+              </div>
+              <div id="qa-report-panel" class="hidden" hidden>
+                <div id="proof-report" class="proof-report md-preview"></div>
+              </div>
             </section>
           </div>
         </div>

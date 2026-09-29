@@ -60,6 +60,7 @@ Space: `--space-1` … `--space-6` (4px grid). Radius: 8px controls, 12px panels
 | `.status-bar` / `.status-bar-mark` / `.status-bar-meta` | Stage content header: pill bar with tone, title, and icon meta. `data-tone` is idle / draft / ok / bad / progress |
 | `.spec-section` | Section checklist rows (present / missing / error) |
 | `.proof-report` | QA artifact (`derived/proof-report.md`) |
+| `.qa-tab-bar` / `.qa-tab` | QA Activity / Report tabs when a report exists. Activity is first and default |
 | `.input` | `--surface-3` fields |
 | `.markdown-editor` / `.md-toolbar` / `.md-menu` / `.md-preview` | Define-only editor: Preview default, Edit source, Split. Sticky toolbar. Heading control is a dropdown. Preview uses `--font-ui`; Edit uses `--font-mono` |
 | `.review-diff` / `.review-file` / `.diff-add` / `.diff-del` | Improve patch review on Define; add/del use status ok/bad surfaces |

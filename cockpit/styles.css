@@ -1165,6 +1165,40 @@ body {
   list-style: none;
 }
 
+.activity-log-main {
+  max-height: min(32rem, 60vh);
+}
+
+.qa-tab-bar {
+  display: flex;
+  gap: 2px;
+  margin: 0 0 var(--space-3);
+}
+
+.qa-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--text-13);
+  font-weight: 700;
+  height: 1.75rem;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.qa-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.qa-tab.is-active {
+  background: var(--surface-selected);
+  color: var(--color-primary);
+}
+
 .activity-log .list-row,
 #proof-report.list-rows .list-row {
   cursor: default;

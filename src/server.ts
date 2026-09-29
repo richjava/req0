@@ -19,7 +19,7 @@ import { inspectProductRepo, needsStackChoice, recordProjectSetup, recordStack, 
 import { adapterDisplayName, parseAdapterId } from "./adapter.js";
 import { pipelineView, sectionCatalog } from "./stages.js";
 import type { PackPaths } from "./pack.js";
-import type { ActivityLevel, ActivityLine, AdapterId, CompileResult } from "./types.js";
+import type { ActivityChannel, ActivityLevel, ActivityLine, AdapterId, CompileResult } from "./types.js";
 
 const cockpitDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../cockpit");
 
@@ -27,13 +27,14 @@ export type AppState = {
   cwd: string;
   pack: PackPaths | null;
   last: CompileResult | null;
-  activity: ActivityLine[];
+  implementActivity: ActivityLine[];
+  proveActivity: ActivityLine[];
   busy: "prove" | "improve" | "implement" | null;
   implementLaunch: LaunchAdapterResult | null;
 };
 
 export function createAppState(cwd: string, pack: PackPaths | null): AppState {
-  return { cwd, pack, last: null, activity: [], busy: null, implementLaunch: null };
+  return { cwd, pack, last: null, implementActivity: [], proveActivity: [], busy: null, implementLaunch: null };
 }
 
 export async function refresh(state: AppState): Promise<CompileResult | null> {
@@ -88,7 +89,7 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
         return;
       }
       state.pack = chosen;
-      state.activity = [];
+      clearActivity(state);
       await refresh(state);
       await sendJson(res, await snapshot(state));
       return;
@@ -97,7 +98,7 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
     if (req.method === "POST" && url.pathname === "/api/home") {
       state.pack = null;
       state.last = null;
-      state.activity = [];
+      clearActivity(state);
       await sendJson(res, await snapshot(state));
       return;
     }
@@ -123,7 +124,7 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
       if (state.pack?.root === chosen.root) {
         state.pack = null;
         state.last = null;
-        state.activity = [];
+        clearActivity(state);
       }
       await deletePack(chosen);
       await sendJson(res, await snapshot(state));
@@ -223,7 +224,7 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
       }
       const pack = state.pack;
       state.busy = "improve";
-      state.activity = [];
+      clearActivity(state, "implement");
       pushActivity(state, "Wrote derived/improve-brief.md.");
       if (adapter === "manual") {
         pushActivity(state, "Manual adapter: open the brief in any coding agent.", "ok");
@@ -322,7 +323,7 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
       const stack = typeof body["stack"] === "string" && body["stack"].trim() ? String(body["stack"]) : undefined;
       const fromProof = body["fromProof"] === true;
       try {
-        state.activity = [];
+        clearActivity(state, "implement");
         pushActivity(state, fromProof ? "Fix from proof started." : "Implement started.");
         const launched = await implementPack(state.pack, {
           ...(stack ? { adapter, stack } : { adapter }),
@@ -424,8 +425,8 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
       }
       const pack = state.pack;
       state.busy = "prove";
-      state.activity = [];
-      pushActivity(state, "Prove started.");
+      clearActivity(state, "prove");
+      pushActivity(state, "Prove started.", "info", "prove");
       await yieldEventLoop();
       await sendJson(res, { ...(await snapshot(state)), started: true, message: "Prove started." });
       void runProve(state, pack);
@@ -467,7 +468,7 @@ async function snapshot(state: AppState) {
     state.last = await compilePack(state.pack);
   }
   const improveReview = state.pack ? await evaluateImproveReview(state.pack) : null;
-  if (improveReview?.files.length && !state.activity.some((line) => line.message === "Improve patch ready to review.")) {
+  if (improveReview?.files.length && !state.implementActivity.some((line) => line.message === "Improve patch ready to review.")) {
     pushActivity(state, "Improve patch ready to review.", "ok");
   }
   const health = state.last ? applyImproveReviewGate(state.last.health, improveReview) : null;
@@ -493,7 +494,8 @@ async function snapshot(state: AppState) {
     proofReport,
     hasApiKey: hasJevAccess(),
     productRepo: await inspectProductRepo(await inspectFrom(state)),
-    activity: state.activity,
+    implementActivity: state.implementActivity,
+    proveActivity: state.proveActivity,
     busy: state.busy,
     improveReview,
   };
@@ -568,12 +570,12 @@ async function runImplement(
 async function runProve(state: AppState, pack: PackPaths): Promise<void> {
   try {
     const proved = await provePack(pack, {
-      onProgress: (message, level) => pushActivity(state, message, level),
+      onProgress: (message, level) => pushActivity(state, message, level, "prove"),
     });
     state.last = proved.result;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Prove failed.";
-    pushActivity(state, message, "error");
+    pushActivity(state, message, "error", "prove");
     if (err instanceof JevUnavailableError && state.pack) {
       state.last = await compilePack(state.pack);
     }
@@ -582,9 +584,23 @@ async function runProve(state: AppState, pack: PackPaths): Promise<void> {
   }
 }
 
-function pushActivity(state: AppState, message: string, level: ActivityLevel = "info"): void {
+function clearActivity(state: AppState, channel?: ActivityChannel): void {
+  if (!channel || channel === "implement") state.implementActivity = [];
+  if (!channel || channel === "prove") state.proveActivity = [];
+}
+
+function pushActivity(
+  state: AppState,
+  message: string,
+  level: ActivityLevel = "info",
+  channel: ActivityChannel = "implement",
+): void {
   const line: ActivityLine = { at: new Date().toISOString(), level, message };
-  state.activity = [...state.activity, line].slice(-80);
+  if (channel === "prove") {
+    state.proveActivity = [...state.proveActivity, line].slice(-80);
+    return;
+  }
+  state.implementActivity = [...state.implementActivity, line].slice(-80);
 }
 
 async function yieldEventLoop(): Promise<void> {

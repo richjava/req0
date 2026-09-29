@@ -33,6 +33,10 @@ describe("cockpit reload contract", () => {
     expect(js).toMatch(/\/api\/select/);
     expect(js).toMatch(/\/api\/home/);
     expect(js).toMatch(/\/api\/delete/);
+    expect(js).toMatch(/implementActivity/);
+    expect(js).toMatch(/proveActivity/);
+    expect(js).toMatch(/qaTab = "activity"/);
+    expect(js).not.toMatch(/\bactivityLines\b/);
     expect(js).toMatch(/from\s+["']\.\/markdown-editor\.js["']/);
     const bundle = await readFile(path.join(cockpitDir, "markdown-editor.js"), "utf8");
     expect(bundle).toMatch(/createMarkdownEditor/);
@@ -86,6 +90,11 @@ describe("cockpit reload contract", () => {
     expect(html).toContain("view-judgment");
     expect(html).toContain("view-implement");
     expect(html).toContain("view-qa");
+    expect(html).toContain("qa-tab-activity");
+    expect(html).toContain("qa-tab-report");
+    expect(html).toContain('id="implement-activity"');
+    expect(html).toContain('id="qa-activity"');
+    expect(html).toContain('id="qa-tabs"');
     expect(html).toContain("action-build-ignore");
     expect(html).toContain("action-build-stop");
     expect(html).toContain("markdown-editor");
@@ -97,6 +106,9 @@ describe("cockpit reload contract", () => {
     expect(await editor.text()).toMatch(/createMarkdownEditor/);
     const snap = await state.json();
     expect(snap).toMatchObject({ busy: null, packId: null });
+    expect(snap.implementActivity).toEqual([]);
+    expect(snap.proveActivity).toEqual([]);
+    expect(snap).not.toHaveProperty("activity");
     expect(snap.packList).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

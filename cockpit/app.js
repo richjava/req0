@@ -21,6 +21,12 @@ const els = {
   qaStatus: document.getElementById("qa-status"),
   implementActivity: document.getElementById("implement-activity"),
   qaActivity: document.getElementById("qa-activity"),
+  qaTabs: document.getElementById("qa-tabs"),
+  qaTabActivity: document.getElementById("qa-tab-activity"),
+  qaTabReport: document.getElementById("qa-tab-report"),
+  qaActivityLabel: document.getElementById("qa-activity-label"),
+  qaActivityPanel: document.getElementById("qa-activity-panel"),
+  qaReportPanel: document.getElementById("qa-report-panel"),
   proofReport: document.getElementById("proof-report"),
   actionReady: document.getElementById("action-ready"),
   actionBuild: document.getElementById("action-build"),
@@ -92,17 +98,31 @@ let focusedSection = "Business Rules";
 let actionNotice = "";
 let actionBusy = false;
 let headerBusyLabel = "";
-let activityLines = [];
-let lastActivityKey = "";
+let implementLines = [];
+let proveLines = [];
+let lastImplementKey = "";
+let lastProveKey = "";
+let qaTab = "activity";
 let loadInFlight = false;
 let loadAgain = false;
 let loadTimer;
 let stateEpoch = 0;
 
+function applyActivities(payload) {
+  if (!payload) return;
+  if (Array.isArray(payload.implementActivity)) implementLines = payload.implementActivity;
+  if (Array.isArray(payload.proveActivity)) proveLines = payload.proveActivity;
+}
+
+function lastBusyMessage(kind) {
+  const lines = kind === "prove" ? proveLines : implementLines;
+  return lines[lines.length - 1]?.message ?? "";
+}
+
 function takeState(next) {
   stateEpoch += 1;
   state = next;
-  if (Array.isArray(state.activity)) activityLines = state.activity;
+  applyActivities(state);
 }
 
 async function load() {
@@ -117,7 +137,7 @@ async function load() {
     const body = await res.json();
     if (epoch !== stateEpoch) return;
     state = body;
-    if (Array.isArray(state.activity)) activityLines = state.activity;
+    applyActivities(state);
     render();
   } catch (err) {
     if (els.going) {
@@ -254,6 +274,7 @@ function render() {
   renderJudgmentPane();
   renderRunStatus();
   renderProofReport();
+  renderQaLayout();
   renderActivity();
 }
 
@@ -382,6 +403,7 @@ async function selectPack(id) {
   }
   takeState(body);
   currentView = "define";
+  qaTab = "activity";
   actionNotice = "";
   render();
 }
@@ -396,6 +418,7 @@ async function goHome() {
   }
   takeState(body);
   currentView = "define";
+  qaTab = "activity";
   actionNotice = "";
   render();
 }
@@ -1074,12 +1097,28 @@ function renderProofReport() {
   if (!els.proofReport) return;
   const report = state?.proofReport?.trim();
   if (!report) {
-    els.proofReport.className = "list-rows";
-    els.proofReport.innerHTML = `<div class="list-row list-row-idle">No proof report yet. Prove writes derived/proof-report.md here.</div>`;
+    els.proofReport.innerHTML = "";
     return;
   }
   els.proofReport.className = "proof-report md-preview";
   els.proofReport.innerHTML = renderProofMarkdown(report);
+}
+
+function renderQaLayout() {
+  const hasReport = Boolean(state?.proofReport?.trim());
+  if (!hasReport) qaTab = "activity";
+  els.qaTabs?.classList.toggle("hidden", !hasReport);
+  if (els.qaTabs) els.qaTabs.hidden = !hasReport;
+  els.qaActivityLabel?.classList.toggle("hidden", hasReport);
+  const showReport = hasReport && qaTab === "report";
+  els.qaActivityPanel?.classList.toggle("hidden", showReport);
+  if (els.qaActivityPanel) els.qaActivityPanel.hidden = showReport;
+  els.qaReportPanel?.classList.toggle("hidden", !showReport);
+  if (els.qaReportPanel) els.qaReportPanel.hidden = !showReport;
+  els.qaTabActivity?.classList.toggle("is-active", qaTab !== "report");
+  els.qaTabReport?.classList.toggle("is-active", qaTab === "report");
+  els.qaTabActivity?.setAttribute("aria-selected", qaTab !== "report" ? "true" : "false");
+  els.qaTabReport?.setAttribute("aria-selected", qaTab === "report" ? "true" : "false");
 }
 
 function renderProofMarkdown(source) {
@@ -1146,32 +1185,40 @@ function jumpToSpecId(id) {
   return false;
 }
 
-function renderActivity() {
-  const logs = [els.implementActivity, els.qaActivity].filter(Boolean);
-  if (!logs.length) return;
-  const lines = activityLines.length
-    ? activityLines
-    : [{ level: "info", message: "No activity yet. Implement and Prove write progress here." }];
-  const key = lines.map((line) => `${line.level}\0${line.message}`).join("\n");
-  if (key === lastActivityKey && logs.every((log) => log.childElementCount === lines.length)) return;
-  lastActivityKey = key;
-  for (const log of logs) {
-    const pinned = log.scrollHeight - log.scrollTop - log.clientHeight < 16;
-    const savedTop = log.scrollTop;
-    log.innerHTML = "";
-    for (const line of lines) {
-      const li = document.createElement("li");
-      const kind = line.level === "error" ? "bad" : line.level === "ok" ? "ok" : "idle";
-      li.className = `list-row list-row-${kind}`;
-      li.textContent = line.message;
-      log.append(li);
-    }
-    log.scrollTop = pinned ? log.scrollHeight : savedTop;
+function fillActivityLog(log, lines, emptyMessage, which) {
+  if (!log) return;
+  const rows = lines.length ? lines : [{ level: "info", message: emptyMessage }];
+  const key = rows.map((line) => `${line.level}\0${line.message}`).join("\n");
+  const previous = which === "prove" ? lastProveKey : lastImplementKey;
+  if (key === previous && log.childElementCount === rows.length) return;
+  if (which === "prove") lastProveKey = key;
+  else lastImplementKey = key;
+  const pinned = log.scrollHeight - log.scrollTop - log.clientHeight < 16;
+  const savedTop = log.scrollTop;
+  log.innerHTML = "";
+  for (const line of rows) {
+    const li = document.createElement("li");
+    const kind = line.level === "error" ? "bad" : line.level === "ok" ? "ok" : "idle";
+    li.className = `list-row list-row-${kind}`;
+    li.textContent = line.message;
+    log.append(li);
   }
+  log.scrollTop = pinned ? log.scrollHeight : savedTop;
 }
 
-function appendActivity(line) {
-  activityLines = [...activityLines, line].slice(-80);
+function renderActivity() {
+  fillActivityLog(
+    els.implementActivity,
+    implementLines,
+    "No activity yet. Implement writes progress here.",
+    "implement",
+  );
+  fillActivityLog(els.qaActivity, proveLines, "No activity yet. Prove writes progress here.", "prove");
+}
+
+function appendActivity(line, channel) {
+  if (channel === "prove") proveLines = [...proveLines, line].slice(-80);
+  else implementLines = [...implementLines, line].slice(-80);
   if (line.message) {
     actionNotice = line.message;
     setActionHint(line.message);
@@ -1296,7 +1343,7 @@ async function runStageAction(id) {
     return;
   }
   if (id === "improve") {
-    activityLines = [{ level: "info", message: "Improve started." }];
+    implementLines = [{ level: "info", message: "Improve started." }];
     actionNotice = "Writing the improve brief…";
     setActionHint(actionNotice);
     renderActivity();
@@ -1322,7 +1369,7 @@ async function runStageAction(id) {
       });
       const payload = await res.json();
       if (payload.health || payload.packId) state = { ...state, ...payload };
-      if (Array.isArray(payload.activity)) activityLines = payload.activity;
+      applyActivities(payload);
       actionNotice = payload.error ?? payload.message ?? "Owner stopped Implement.";
     } catch (err) {
       actionNotice = err instanceof Error ? err.message : "Stop failed.";
@@ -1332,7 +1379,7 @@ async function runStageAction(id) {
     return;
   }
   if (id === "implement") {
-    activityLines = [{ level: "info", message: "Implement started." }];
+    implementLines = [{ level: "info", message: "Implement started." }];
     actionNotice = "Implement started.";
     setMeter("build", "running");
     renderActivity();
@@ -1351,7 +1398,7 @@ async function runStageAction(id) {
     return;
   }
   if (id === "fix-from-proof") {
-    activityLines = [{ level: "info", message: "Fix from proof started." }];
+    implementLines = [{ level: "info", message: "Fix from proof started." }];
     actionNotice = "Fix from proof started.";
     setMeter("build", "running");
     renderActivity();
@@ -1365,7 +1412,8 @@ async function runStageAction(id) {
     return;
   }
   if (id === "prove") {
-    activityLines = [{ level: "info", message: "Prove started." }];
+    proveLines = [{ level: "info", message: "Prove started." }];
+    qaTab = "activity";
     actionNotice = "Prove started.";
     setMeter("proof", "running");
     renderActivity();
@@ -1375,6 +1423,8 @@ async function runStageAction(id) {
 }
 
 async function runProveAction() {
+  openView("qa");
+  qaTab = "activity";
   actionBusy = true;
   headerBusyLabel = "Proving…";
   paintActionButton(els.next, {
@@ -1394,8 +1444,8 @@ async function runProveAction() {
       body: "{}",
     });
     const payload = await res.json();
-    if (Array.isArray(payload.activity) && payload.activity.length) {
-      activityLines = payload.activity;
+    applyActivities(payload);
+    if (Array.isArray(payload.proveActivity) && payload.proveActivity.length) {
       renderActivity();
     }
     if (!res.ok && !payload.started) {
@@ -1425,16 +1475,16 @@ async function waitWhileBusy(kind) {
       const res = await fetch("/api/state");
       const data = await res.json();
       if (data.health || data.packId || data.improveReview) state = { ...state, ...data };
-      if (Array.isArray(data.activity)) activityLines = data.activity;
+      applyActivities(data);
       if (data.improveReview?.files?.length) {
         actionNotice = "";
         render();
         return;
       }
-      const last = activityLines[activityLines.length - 1];
-      if (last?.message && !data.improveReview) {
-        actionNotice = last.message;
-        setActionHint(last.message);
+      const last = lastBusyMessage(kind === "prove" ? "prove" : "implement");
+      if (last && !data.improveReview) {
+        actionNotice = last;
+        setActionHint(last);
       }
       render();
       if (data.busy !== kind) return;
@@ -1450,13 +1500,13 @@ async function refreshActivity() {
     const res = await fetch("/api/state");
     const data = await res.json();
     if (data.health || data.packId || data.improveReview) state = { ...state, ...data };
-    if (Array.isArray(data.activity)) activityLines = data.activity;
+    applyActivities(data);
     if (data.improveReview?.files?.length) actionNotice = "";
     else {
-      const last = activityLines[activityLines.length - 1];
-      if (last?.message) {
-        actionNotice = last.message;
-        setActionHint(last.message);
+      const last = lastBusyMessage(data.busy === "prove" ? "prove" : "implement");
+      if (last) {
+        actionNotice = last;
+        setActionHint(last);
       }
     }
     render();
@@ -1487,8 +1537,11 @@ async function runBackgroundAction(busyLabel, url, body, kind) {
     });
     const payload = await res.json();
     if (payload.health || payload.packId) state = { ...state, ...payload };
-    if (Array.isArray(payload.activity) && payload.activity.length) {
-      activityLines = payload.activity;
+    applyActivities(payload);
+    if (
+      (Array.isArray(payload.implementActivity) && payload.implementActivity.length) ||
+      (Array.isArray(payload.proveActivity) && payload.proveActivity.length)
+    ) {
       renderActivity();
     }
     if (!res.ok && !payload.started) {
@@ -1536,7 +1589,7 @@ async function runNextAction(busyLabel, url, body) {
     });
     const payload = await res.json();
     if (payload.health || payload.packId) state = { ...state, ...payload };
-    if (Array.isArray(payload.activity)) activityLines = payload.activity;
+    applyActivities(payload);
     if (!res.ok || payload.error) {
       actionNotice = payload.error ?? "Request failed.";
       actionBusy = false;
@@ -1630,6 +1683,14 @@ els.stackNextjs?.addEventListener("click", () => void recordStack("nextjs-defaul
 els.stackAmplify?.addEventListener("click", () => void recordStack("amplify-gen2"));
 
 els.homeBtn?.addEventListener("click", () => void goHome());
+els.qaTabActivity?.addEventListener("click", () => {
+  qaTab = "activity";
+  renderQaLayout();
+});
+els.qaTabReport?.addEventListener("click", () => {
+  qaTab = "report";
+  renderQaLayout();
+});
 els.allRequirements?.addEventListener("click", () => void goHome());
 els.packMenu?.addEventListener("contextmenu", (event) => event.preventDefault());
 els.packMenuDelete?.addEventListener("click", () => openDeleteDialog());
