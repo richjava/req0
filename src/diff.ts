@@ -33,8 +33,14 @@ function lcsEdits(before: string[], after: string[]): Edit[] {
   const m = after.length;
   const dp: number[][] = Array.from({ length: n + 1 }, () => Array<number>(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i -= 1) {
+    const row = dp[i];
+    const next = dp[i + 1];
+    if (!row) continue;
     for (let j = m - 1; j >= 0; j -= 1) {
-      dp[i][j] = before[i] === after[j] ? (dp[i + 1]?.[j + 1] ?? 0) + 1 : Math.max(dp[i + 1]?.[j] ?? 0, dp[i]?.[j + 1] ?? 0);
+      row[j] =
+        before[i] === after[j]
+          ? (next?.[j + 1] ?? 0) + 1
+          : Math.max(next?.[j] ?? 0, row[j + 1] ?? 0);
     }
   }
   const edits: Edit[] = [];

@@ -1,16 +1,37 @@
 {
   "name": "req0",
   "version": "0.1.0",
-  "private": true,
-  "description": "Req0 — requirement operating system: a spec pack, a cockpit, Jev, coding-agent implement, and browser proof.",
+  "description": "Requirement operating system: spec packs, a local cockpit, Jev, coding-agent implement, and browser proof.",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "req0": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "cockpit",
+    "docs/requirement-template.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/richjava/req0.git"
+  },
+  "bugs": {
+    "url": "https://github.com/richjava/req0/issues"
+  },
+  "homepage": "https://github.com/richjava/req0#readme",
+  "keywords": [
+    "requirements",
+    "spec",
+    "cli",
+    "cockpit",
+    "jev"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.cli.json",
     "build:cockpit": "node scripts/build-markdown-editor.mjs",
     "build:app": "next build",
+    "prepack": "npm run build",
     "req0": "tsx src/cli.ts",
     "start": "tsx src/cli.ts start",
     "dev": "next dev",
@@ -23,17 +44,14 @@
     "node": ">=22.15"
   },
   "dependencies": {
-    "@aws-sdk/client-cognito-identity-provider": "^3.1141.0",
-    "aws-amplify": "^6.22.0",
-    "next": "15.5.26",
-    "playwright": "^1.63.0",
-    "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "playwright": "^1.63.0"
   },
   "devDependencies": {
     "@aws-amplify/backend": "^1.25.1",
     "@aws-amplify/backend-cli": "^1.10.0",
     "@aws-amplify/seed": "^1.1.5",
+    "@aws-sdk/client-cognito-identity-provider": "^3.1141.0",
+    "aws-amplify": "^6.22.0",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/language": "^6.12.3",
@@ -49,6 +67,9 @@
     "esbuild": "^0.25.9",
     "js-yaml": "^5.4.2",
     "marked": "^18.0.14",
+    "next": "15.5.26",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
     "tailwindcss": "^4",
     "tsx": "4.19.4",
     "typescript": "^5.9.2",

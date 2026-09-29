@@ -28,7 +28,7 @@ export async function createPlaywrightDriver(onProgress?: ProgressFn): Promise<P
   try {
     playwright = await import("playwright");
   } catch {
-    throw new Error('Playwright is not installed. From the Req0 repo run "npm install" then "npx playwright install chromium".');
+    throw new Error('Playwright is not installed. Run "npx playwright install chromium" (Req0 depends on the playwright package).');
   }
 
   const browser = await launchChromium(playwright, onProgress);
@@ -552,7 +552,7 @@ async function launchChromium(
     }
   }
   throw new Error(
-    `Could not launch a browser. ${errors.join(" ")} Install Google Chrome, or from the Req0 repo run "npx playwright install chromium".`,
+    `Could not launch a browser. ${errors.join(" ")} Install Google Chrome, or run "npx playwright install chromium".`,
   );
 }
 

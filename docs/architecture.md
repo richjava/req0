@@ -1,6 +1,6 @@
 # Architecture
 
-Req0 is a TypeScript CLI (`src/`) plus static cockpit files (`cockpit/`). Runtime: Node 22+. No Next.js in this repo — that stack is reserved for apps a coding agent may generate later.
+Req0 is a TypeScript CLI (`src/`) plus static cockpit files (`cockpit/`). Runtime: Node 22+. The published npm package is that CLI. This git repo also holds a sample Invoice Desk Next.js app used as a fixture — it is not part of the package.
 
 ```text
 requirement.md  -->  compile (deterministic)  -->  spec.json + health.json + jev-pack.json
