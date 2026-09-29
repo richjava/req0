@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
-import { mkdir, readFile, writeFile, readdir, access, appendFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, readdir, access, appendFile, rm } from "node:fs/promises";
 import path from "node:path";
+import { adapterDisplayName, adapterLaunchesAgent } from "./adapter.js";
 import { compileMarkdown, healthToStatusMarkdown, isRequirementId } from "./compile.js";
 import {
   assertImplementAllowed,
@@ -43,7 +44,7 @@ import {
   specHash,
   unfollowImplementPid,
 } from "./ready.js";
-import { ignoreBuildAllowed } from "./stages.js";
+import { ignoreBuildAllowed, packListMeters } from "./stages.js";
 import { parseRuntimeYaml, type RuntimeResult } from "./runtime.js";
 import {
   inspectProductRepo,
@@ -54,8 +55,8 @@ import {
   writeAmplifyEnvExampleIfMissing,
   writeReq0Config,
 } from "./stack.js";
-import { EMPTY_TEMPLATE, PERSONAS_STUB, RUNTIME_STUB } from "./template.js";
-import type { AdapterId, BuildRun, CompileResult, JevRun, ProgressFn, ProofRun, SpecAst } from "./types.js";
+import { loadStarterRequirement, PERSONAS_STUB, RUNTIME_STUB } from "./template.js";
+import type { AdapterId, BuildRun, CompileResult, Health, JevRun, PackListItem, ProgressFn, ProofRun, SpecAst } from "./types.js";
 
 export const REQUIREMENT_FILE = "requirement.md";
 export const PERSONAS_FILE = path.join("fixtures", "personas.yaml");
@@ -122,7 +123,7 @@ export async function isPackDir(dir: string): Promise<boolean> {
   }
 }
 
-export async function resolvePack(cwd: string): Promise<PackPaths | null> {
+export async function resolveCockpitPack(cwd: string): Promise<PackPaths | null> {
   const abs = path.resolve(cwd);
   if (await isPackDir(abs)) return packPaths(abs);
 
@@ -131,10 +132,52 @@ export async function resolvePack(cwd: string): Promise<PackPaths | null> {
   if (isRequirementId(id) && parent === "requirements") {
     return packPaths(abs);
   }
+  return null;
+}
 
-  const named = path.join(abs, "docs", "requirements");
+export async function resolvePack(cwd: string): Promise<PackPaths | null> {
+  const fromDir = await resolveCockpitPack(cwd);
+  if (fromDir) return fromDir;
+
+  const named = path.join(path.resolve(cwd), "docs", "requirements");
   const packs = await listPacks(named);
   if (packs.length === 1) return packs[0] ?? null;
+  return null;
+}
+
+export async function summarizePacks(packs: PackPaths[]): Promise<PackListItem[]> {
+  const items: PackListItem[] = [];
+  for (const pack of packs) {
+    items.push(await summarizePack(pack));
+  }
+  return items;
+}
+
+async function summarizePack(paths: PackPaths): Promise<PackListItem> {
+  const markdown = await readMarkdown(paths);
+  const title = titleFromMarkdown(markdown) || paths.id.replaceAll("-", " ");
+  const health = (await readStoredHealth(paths)) ?? (await compilePack(paths)).health;
+  return {
+    id: paths.id,
+    title,
+    meters: packListMeters(health, true),
+  };
+}
+
+function titleFromMarkdown(markdown: string): string {
+  const match = markdown.match(/^#\s+(.+)$/m);
+  return match?.[1]?.trim() ?? "";
+}
+
+async function readStoredHealth(paths: PackPaths): Promise<Health | null> {
+  try {
+    const raw = JSON.parse(await readFile(paths.health, "utf8")) as Partial<Health>;
+    if (raw && typeof raw === "object" && raw.spec && raw.ready && raw.build && raw.proof) {
+      return raw as Health;
+    }
+  } catch {
+    /* compile on demand */
+  }
   return null;
 }
 
@@ -235,10 +278,12 @@ export async function compilePack(paths: PackPaths): Promise<CompileResult> {
     });
   }
   const latestBuildRun = await readBuildRun(paths);
+  const build = evaluateBuild(result.spec, latestBuildRun);
   result.health.build = repo.implement
     ? {
-        ...evaluateBuild(result.spec, latestBuildRun),
+        ...build,
         needsStack: needsStackChoice(repo),
+        adapter: build.adapter,
       }
     : {
         state: "not_yet",
@@ -332,7 +377,7 @@ export async function createPack(root: string): Promise<PackPaths> {
   try {
     await access(paths.requirement);
   } catch {
-    await writeFile(paths.requirement, EMPTY_TEMPLATE, "utf8");
+    await writeFile(paths.requirement, await loadStarterRequirement(), "utf8");
   }
   try {
     await access(paths.personas);
@@ -342,6 +387,13 @@ export async function createPack(root: string): Promise<PackPaths> {
   await writeRuntimeStubIfMissing(paths);
   await compilePack(paths);
   return paths;
+}
+
+export async function deletePack(paths: PackPaths): Promise<void> {
+  if (!(await isPackDir(paths.root))) {
+    throw new Error(`Not a requirement pack: ${paths.id}`);
+  }
+  await rm(paths.root, { recursive: true, force: true });
 }
 
 export async function writeRuntimeStubIfMissing(paths: PackPaths): Promise<boolean> {
@@ -378,7 +430,7 @@ export async function implementPack(
   const repo = await inspectProductRepo(paths.root);
   if (!repo.implement) throw new ImplementDisabledError();
   await writeRuntimeStubIfMissing(paths);
-  const adapter = options.adapter ?? "cursor";
+  const adapter = options.adapter ?? (repo.adapterRecorded ? repo.adapter : "cursor");
   const requested = options.stack !== undefined ? resolveStackId(options.stack) : null;
   if (options.stack !== undefined && !requested) throw new UnknownStackError(options.stack);
   const stack = requested ?? (repo.recorded ? repo.stack : null);
@@ -405,7 +457,7 @@ export async function implementPack(
     onLogLine: options.onLogLine,
     prompt,
   });
-  const following = launch.ok && adapter === "cursor" && Boolean(launch.finished);
+  const following = launch.ok && adapterLaunchesAgent(adapter) && Boolean(launch.finished);
   if (following) followImplementPid(launch.child?.pid);
   await writeBuildRun(paths, {
     specHash: compiled.spec ? specHash(compiled.spec) : "",
@@ -428,11 +480,12 @@ export async function finishImplement(
   const compiled = await compilePack(paths);
   const stopped = launch.stop?.reason;
   const ok = !stopped && launch.ok && done.code === 0;
+  const name = adapterDisplayName(adapter);
   const message = stopped
     ? stopped
     : ok
-      ? "Cursor agent finished. Build Succeeded is not proof the app boots."
-      : `Cursor agent exited (${done.code ?? "unknown"}). ${tailImplementLog(paths)}`.trim();
+      ? `${name} agent finished. Build Succeeded is not proof the app boots.`
+      : `${name} agent exited (${done.code ?? "unknown"}). ${tailImplementLog(paths)}`.trim();
   await writeBuildRun(paths, {
     specHash: compiled.spec ? specHash(compiled.spec) : "",
     state: ok ? "succeeded" : "failed",
@@ -463,10 +516,11 @@ export async function stopImplement(
   const stop = launch.stop ?? (launch.stop = {});
   requestImplementStop(launch.child, stop, reason);
   const compiled = await compilePack(paths);
+  const previous = await readBuildRun(paths);
   await writeBuildRun(paths, {
     specHash: compiled.spec ? specHash(compiled.spec) : "",
     state: "failed",
-    adapter: "cursor",
+    adapter: previous?.adapter ?? "cursor",
     at: new Date().toISOString(),
     message: reason,
   });
@@ -543,14 +597,15 @@ export async function launchImprove(
   options: { adapter?: AdapterId } = {},
 ): Promise<{ ok: boolean; message: string }> {
   const repo = await inspectProductRepo(paths.root);
-  const adapter = options.adapter ?? "cursor";
+  const adapter = options.adapter ?? (repo.adapterRecorded && adapterLaunchesAgent(repo.adapter) ? repo.adapter : "manual");
+  const name = adapterDisplayName(adapter);
   return launchAdapter(adapter, repo.root, paths.improveBrief, {
     prompt: improvePrompt(paths.improveBrief),
     openIde: false,
     successMessage:
       adapter === "manual"
-        ? "Wrote derived/improve-brief.md. Open it in any coding agent, or retry without adapter=manual to launch Cursor."
-        : "Started a Cursor agent. The cockpit will show a diff when the spec changes.",
+        ? "Wrote derived/improve-brief.md. Open it in any coding agent."
+        : `Started a ${name} agent. The cockpit will show a diff when the spec changes.`,
   });
 }
 

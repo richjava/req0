@@ -38,11 +38,30 @@ const els = {
   newId: document.getElementById("new-id"),
   createNew: document.getElementById("create-new"),
   createError: document.getElementById("create-error"),
+  homeBtn: document.getElementById("home-btn"),
+  allRequirements: document.getElementById("all-requirements"),
+  packHome: document.getElementById("pack-home"),
+  packWorkspace: document.getElementById("pack-workspace"),
+  packList: document.getElementById("pack-list"),
+  packEmpty: document.getElementById("pack-empty"),
+  packMenu: document.getElementById("pack-menu"),
+  packMenuDelete: document.getElementById("pack-menu-delete"),
+  deleteDialog: document.getElementById("delete-pack-dialog"),
+  deleteCopy: document.getElementById("delete-pack-copy"),
+  deleteCancel: document.getElementById("delete-pack-cancel"),
+  deleteConfirm: document.getElementById("delete-pack-confirm"),
   stackGate: document.getElementById("stack-gate"),
+  setupTitle: document.getElementById("setup-title"),
+  setupCopy: document.getElementById("setup-copy"),
+  codingSection: document.getElementById("coding-section"),
+  stackSection: document.getElementById("stack-section"),
   stackBar: document.getElementById("stack-bar"),
   stackError: document.getElementById("stack-error"),
   stackNextjs: document.getElementById("stack-nextjs"),
   stackAmplify: document.getElementById("stack-amplify"),
+  codingManual: document.getElementById("coding-manual"),
+  codingCursor: document.getElementById("coding-cursor"),
+  codingCopilot: document.getElementById("coding-copilot"),
   cockpitApp: document.getElementById("cockpit-app"),
   workspace: document.getElementById("view-define"),
   workspaceLabel: document.getElementById("workspace-label"),
@@ -78,6 +97,13 @@ let lastActivityKey = "";
 let loadInFlight = false;
 let loadAgain = false;
 let loadTimer;
+let stateEpoch = 0;
+
+function takeState(next) {
+  stateEpoch += 1;
+  state = next;
+  if (Array.isArray(state.activity)) activityLines = state.activity;
+}
 
 async function load() {
   if (loadInFlight) {
@@ -85,9 +111,12 @@ async function load() {
     return;
   }
   loadInFlight = true;
+  const epoch = stateEpoch;
   try {
     const res = await fetch("/api/state", { signal: AbortSignal.timeout(8000) });
-    state = await res.json();
+    const body = await res.json();
+    if (epoch !== stateEpoch) return;
+    state = body;
     if (Array.isArray(state.activity)) activityLines = state.activity;
     render();
   } catch (err) {
@@ -111,16 +140,63 @@ function scheduleLoad() {
   }, 250);
 }
 
-function needsStackGate(snapshot) {
+let pendingCoding = null;
+
+function recordedAdapter() {
+  const repo = state?.productRepo;
+  if (!repo?.implement) return "manual";
+  if (repo.adapter === "copilot" || repo.adapter === "manual") return repo.adapter;
+  return "cursor";
+}
+
+function adapterLabel(id) {
+  if (id === "copilot") return "Copilot";
+  if (id === "manual") return "Manual";
+  return "Cursor";
+}
+
+function needsSetupGate(snapshot) {
   const repo = snapshot?.productRepo;
-  return Boolean(repo?.root && repo.implement && repo.empty && !repo.recorded);
+  if (!repo?.root) return false;
+  if (repo.implement && repo.adapterRecorded === false) return true;
+  return Boolean(repo.implement && repo.empty && !repo.recorded);
+}
+
+function renderSetupGate(snapshot) {
+  const repo = snapshot?.productRepo;
+  const needCoding = Boolean(repo?.implement && repo?.adapterRecorded === false);
+  const needStack = Boolean(repo?.implement && repo?.empty && !repo?.recorded);
+  const showStack = needStack && (!needCoding || Boolean(pendingCoding));
+  els.codingSection?.classList.toggle("hidden", !needCoding);
+  els.stackSection?.classList.toggle("hidden", !showStack);
+  for (const btn of [els.codingManual, els.codingCursor, els.codingCopilot]) {
+    if (!btn) continue;
+    btn.classList.toggle("is-selected", btn.dataset.coding === pendingCoding);
+    btn.disabled = false;
+  }
+  if (els.stackNextjs) els.stackNextjs.disabled = false;
+  if (els.stackAmplify) els.stackAmplify.disabled = false;
+  if (els.setupTitle) {
+    els.setupTitle.textContent = needCoding ? "Set up this project" : "Choose a stack";
+  }
+  if (els.setupCopy) {
+    els.setupCopy.textContent = needCoding
+      ? "Req0 writes your choices to req0.json. You can change them later by editing that file."
+      : "This product repo is empty and no stack is recorded yet. Pick one to continue. Amplify also writes a names-only .env.example if that file is missing.";
+  }
 }
 
 function render() {
   const health = state.health;
   const packId = state.packId;
-  els.title.textContent = packId ? `Requirement: ${packId.replaceAll("-", " ")}` : "No requirement selected";
-  els.going.textContent = health?.howThisIsGoing ?? "Create a requirement pack to begin.";
+  const onHome = !packId;
+  const packList = Array.isArray(state.packList) ? state.packList : [];
+  els.title.textContent = packId ? `Requirement: ${packId.replaceAll("-", " ")}` : "Requirements";
+  els.going.textContent = packId
+    ? (health?.howThisIsGoing ?? "")
+    : packList.length
+      ? `${packList.length} requirement${packList.length === 1 ? "" : "s"}`
+      : "Create a requirement pack to begin.";
   els.going.hidden = !els.going.textContent.trim();
 
   const action = health?.nextAction;
@@ -142,14 +218,24 @@ function render() {
   });
   setStageButtons(health, action?.id);
 
-  const needsNewPack = !packId;
-  els.createBar.classList.toggle("hidden", !needsNewPack);
-  const gated = needsStackGate(state);
+  const gated = needsSetupGate(state);
   els.stackGate?.classList.toggle("hidden", !gated);
   els.cockpitApp?.classList.toggle("hidden", gated);
-  els.next.hidden = gated;
+  els.next.hidden = gated || onHome;
+  els.packHome?.classList.toggle("hidden", !onHome);
+  els.packWorkspace?.classList.toggle("hidden", onHome);
+  els.allRequirements?.classList.toggle("hidden", onHome);
+  els.createBar?.classList.toggle("hidden", !onHome);
+  if (!onHome) hidePackMenu();
   if (els.hint) els.hint.hidden = true;
-  if (gated) return;
+  if (gated) {
+    renderSetupGate(state);
+    return;
+  }
+
+  renderPackList(packList);
+
+  if (onHome) return;
 
   if (review && currentView !== "define") currentView = "define";
   if (currentView === "implement" && health?.build?.owned === false) currentView = "define";
@@ -169,6 +255,149 @@ function render() {
   renderRunStatus();
   renderProofReport();
   renderActivity();
+}
+
+function renderPackList(items) {
+  if (!els.packList) return;
+  const signature = JSON.stringify(items);
+  els.packEmpty?.classList.toggle("hidden", items.length > 0);
+  if (els.packList.dataset.sig === signature) return;
+  hidePackMenu();
+  els.packList.dataset.sig = signature;
+  els.packList.innerHTML = "";
+  for (const item of items) {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pack-row";
+    btn.dataset.id = item.id;
+    const copy = document.createElement("span");
+    copy.className = "pack-row-copy";
+    const title = document.createElement("strong");
+    title.textContent = item.title || item.id;
+    const id = document.createElement("span");
+    id.className = "pack-row-id";
+    id.textContent = item.id;
+    copy.append(title, id);
+    const meters = document.createElement("span");
+    meters.className = "pack-row-meters";
+    for (const meter of item.meters ?? []) {
+      const chip = document.createElement("span");
+      chip.className = "pack-meter";
+      chip.dataset.tone = meter.tone ?? "idle";
+      const name = document.createElement("span");
+      name.className = "pack-meter-name";
+      name.textContent = meter.label;
+      chip.append(name, document.createTextNode(meter.badge ?? ""));
+      meters.append(chip);
+    }
+    btn.append(copy, meters);
+    btn.addEventListener("click", () => {
+      hidePackMenu();
+      void selectPack(item.id);
+    });
+    btn.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      showPackMenu(event, item);
+    });
+    li.append(btn);
+    els.packList.append(li);
+  }
+}
+
+let pendingDelete = null;
+
+function hidePackMenu() {
+  if (!els.packMenu) return;
+  els.packMenu.classList.add("hidden");
+  els.packMenu.hidden = true;
+}
+
+function showPackMenu(event, item) {
+  if (!els.packMenu) return;
+  pendingDelete = item;
+  els.packMenu.classList.remove("hidden");
+  els.packMenu.hidden = false;
+  els.packMenu.style.left = `${event.clientX}px`;
+  els.packMenu.style.top = `${event.clientY}px`;
+  const rect = els.packMenu.getBoundingClientRect();
+  const left = Math.min(event.clientX, window.innerWidth - rect.width - 8);
+  const top = Math.min(event.clientY, window.innerHeight - rect.height - 8);
+  els.packMenu.style.left = `${Math.max(8, left)}px`;
+  els.packMenu.style.top = `${Math.max(8, top)}px`;
+  els.packMenuDelete?.focus({ preventScroll: true });
+}
+
+function openDeleteDialog() {
+  hidePackMenu();
+  if (!pendingDelete || !els.deleteDialog) return;
+  const name = pendingDelete.title || pendingDelete.id;
+  if (els.deleteCopy) {
+    els.deleteCopy.textContent = `Delete “${name}”? The pack folder is removed from this repo.`;
+  }
+  els.deleteDialog.showModal();
+}
+
+let deletingPack = false;
+
+async function confirmDeletePack() {
+  const item = pendingDelete;
+  if (!item?.id || deletingPack) return;
+  deletingPack = true;
+  if (els.deleteConfirm) els.deleteConfirm.disabled = true;
+  els.deleteDialog?.close();
+  try {
+    const res = await fetch("/api/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: item.id }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      if (els.createError) els.createError.textContent = body.error ?? "Could not delete that requirement.";
+      return;
+    }
+    pendingDelete = null;
+    takeState(body);
+    currentView = "define";
+    actionNotice = "";
+    render();
+  } finally {
+    deletingPack = false;
+    if (els.deleteConfirm) els.deleteConfirm.disabled = false;
+  }
+}
+
+async function selectPack(id) {
+  const res = await fetch("/api/select", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    if (els.going) els.going.textContent = body.error ?? "Could not open that requirement.";
+    return;
+  }
+  takeState(body);
+  currentView = "define";
+  actionNotice = "";
+  render();
+}
+
+async function goHome() {
+  if (!state?.packId) return;
+  const res = await fetch("/api/home", { method: "POST" });
+  const body = await res.json();
+  if (!res.ok) {
+    if (els.going) els.going.textContent = body.error ?? "Could not return to the list.";
+    return;
+  }
+  takeState(body);
+  currentView = "define";
+  actionNotice = "";
+  render();
 }
 
 function renderReview() {
@@ -335,7 +564,7 @@ function paintActionButton(btn, { id, label, hint, enabled, primary, hidden }) {
   btn.setAttribute("aria-label", hint ? `${label}. ${hint}` : label);
   btn.classList.toggle("is-disabled", !enabled);
   btn.classList.toggle("cta-primary", Boolean(primary && enabled));
-  btn.classList.toggle("cta-danger", id === "stop-implement" || id === "reject-improve");
+  btn.classList.toggle("cta-danger", id === "reject-improve");
   btn.innerHTML = `${actionGlyph(id, label)}<span>${escapeHtml(label)}</span>`;
 }
 
@@ -480,7 +709,7 @@ function makeGraphNode(node, terminal) {
   btn.dataset.id = node.id;
   btn.classList.toggle("is-active", currentView === node.view && node.id !== "start" && node.id !== "end");
   btn.title = node.badge ? `${node.label} — ${node.badge}` : node.label;
-  btn.innerHTML = `<span class="pipeline-node-label">${escapeHtml(node.label)}</span><span class="pipeline-node-dot">${toneGlyph(node.tone)}</span>`;
+  btn.innerHTML = `<span class="pipeline-node-label">${escapeHtml(node.label)}</span><span class="pipeline-node-dot">${toneGlyph(node.tone, node.mark)}</span>`;
   btn.addEventListener("click", () => {
     if (node.id === "start" && !state?.packId) {
       els.createBar?.classList.remove("hidden");
@@ -506,13 +735,23 @@ function defineChildren(node) {
     ready?.state === "blocked" ? "bad" : ready?.state === "ready" ? "ok" : specState === "valid" ? "draft" : "idle";
   return [
     { id: "spec", label: "Spec", view: "spec", tone: specTone, badge: specBadge },
-    { id: "judgment", label: "Judgment", view: "judgment", tone: judgmentTone, badge: ready ? readyLabel(ready) : "Not yet" },
+    {
+      id: "judgment",
+      label: "Judgment",
+      view: "judgment",
+      tone: judgmentTone,
+      badge: ready ? readyLabel(ready) : "Not yet",
+      mark: judgmentTone === "bad" ? "block" : undefined,
+    },
   ];
 }
 
-function toneGlyph(tone) {
+function toneGlyph(tone, mark) {
   if (tone === "ok") {
     return `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.4 6.3 4.9 8.7 9.6 3.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  }
+  if (tone === "bad" && mark === "block") {
+    return `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 6h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
   }
   if (tone === "bad") {
     return `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.2 3.2 8.8 8.8M8.8 3.2 3.2 8.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
@@ -526,21 +765,41 @@ function renderStageNav() {
   const byId = Object.fromEntries((state?.pipeline?.nodes ?? []).map((node) => [node.id, node]));
   const defineKids = defineChildren(byId.define);
   const items = [
-    { view: "define", label: "Define", child: false, tone: byId.define?.tone ?? "idle", badge: byId.define?.badge },
+    {
+      view: "define",
+      label: "Define",
+      child: false,
+      tone: byId.define?.tone ?? "idle",
+      badge: byId.define?.badge,
+      mark: byId.define?.mark,
+    },
     ...defineKids.map((child) => ({
       view: child.view,
       label: child.label,
       child: true,
       tone: child.tone,
       badge: child.badge,
+      mark: child.mark,
     })),
     ...(owned
-      ? [{ view: "implement", label: "Implement", child: false, tone: byId.implement?.tone ?? "idle", badge: byId.implement?.badge }]
+      ? [
+          {
+            view: "implement",
+            label: "Implement",
+            child: false,
+            tone: byId.implement?.tone ?? "idle",
+            badge: byId.implement?.badge,
+            mark: byId.implement?.mark,
+          },
+        ]
       : []),
-    { view: "qa", label: "QA", child: false, tone: byId.qa?.tone ?? "idle", badge: byId.qa?.badge },
+    { view: "qa", label: "QA", child: false, tone: byId.qa?.tone ?? "idle", badge: byId.qa?.badge, mark: byId.qa?.mark },
   ];
   const signature = items
-    .map((item) => `${item.view}|${item.child ? "1" : "0"}|${item.tone}|${item.badge ?? ""}|${currentView === item.view ? "1" : "0"}`)
+    .map(
+      (item) =>
+        `${item.view}|${item.child ? "1" : "0"}|${item.tone}|${item.mark ?? ""}|${item.badge ?? ""}|${currentView === item.view ? "1" : "0"}`,
+    )
     .join(";") + `|define:${defineOpen ? "1" : "0"}`;
   if (els.stageNav.dataset.sig === signature) return;
   els.stageNav.dataset.sig = signature;
@@ -556,7 +815,7 @@ function renderStageNav() {
       btn.classList.toggle("is-open", defineOpen);
       btn.setAttribute("aria-expanded", defineOpen ? "true" : "false");
     }
-    btn.innerHTML = `<span class="nav-mark">${toneGlyph(item.tone)}</span><span class="nav-name">${escapeHtml(item.label)}</span>${
+    btn.innerHTML = `<span class="nav-mark">${toneGlyph(item.tone, item.mark)}</span><span class="nav-name">${escapeHtml(item.label)}</span>${
       item.badge ? `<span class="nav-badge">${escapeHtml(item.badge)}</span>` : ""
     }${item.view === "define" ? `<span class="nav-chevron" aria-hidden="true"></span>` : ""}`;
     btn.addEventListener("click", (event) => {
@@ -606,19 +865,19 @@ function statusIcon(name) {
   return `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>`;
 }
 
-function statusMark(tone) {
-  const glyph = toneGlyph(tone);
+function statusMark(tone, mark) {
+  const glyph = toneGlyph(tone, mark);
   return glyph || `<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`;
 }
 
-function renderStatusBar(el, { tone, title, items }) {
+function renderStatusBar(el, { tone, title, items, mark }) {
   if (!el) return;
   const meta = items.filter((item) => item?.text);
-  const sig = `${tone}|${title}|${meta.map((item) => `${item.icon}:${item.text}`).join(";")}`;
+  const sig = `${tone}|${mark ?? ""}|${title}|${meta.map((item) => `${item.icon}:${item.text}`).join(";")}`;
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
   el.dataset.tone = tone;
-  el.innerHTML = `<span class="status-bar-lead"><span class="status-bar-mark">${statusMark(tone)}</span><span class="status-bar-title">${escapeHtml(
+  el.innerHTML = `<span class="status-bar-lead"><span class="status-bar-mark">${statusMark(tone, mark)}</span><span class="status-bar-title">${escapeHtml(
     title,
   )}</span></span><span class="status-bar-meta">${meta
     .map(
@@ -712,6 +971,7 @@ function renderJudgmentPane() {
   const nits = ready?.nits ?? 0;
   renderStatusBar(els.judgmentBadge, {
     tone: judgmentTone,
+    mark: judgmentTone === "bad" ? "block" : undefined,
     title: "Judgment",
     items: [
       { icon: "clock", text: readyLabel(ready) },
@@ -767,11 +1027,12 @@ function renderRunStatus() {
             : "idle";
   renderStatusBar(els.implementStatus, {
     tone: buildTone,
+    mark: buildTone === "bad" ? "fail" : undefined,
     title: "Implement",
     items: [
       { icon: "clock", text: buildLabel },
       ...(build?.ignored ? [{ icon: "list", text: "Ignored" }] : []),
-      ...(build?.adapter ? [{ icon: "monitor", text: build.adapter === "cursor" ? "Cursor" : "Manual" }] : []),
+      ...(build?.adapter ? [{ icon: "monitor", text: adapterLabel(build.adapter) }] : []),
     ],
   });
 
@@ -800,6 +1061,7 @@ function renderRunStatus() {
   if (typeof proof?.review === "number" && proof.review) counts.push(`${proof.review} review`);
   renderStatusBar(els.qaStatus, {
     tone: proofTone,
+    mark: proofTone === "bad" ? "fail" : undefined,
     title: "QA",
     items: [
       { icon: "clock", text: proofLabel },
@@ -934,14 +1196,14 @@ function selectInEditor(start, end) {
 async function saveMarkdown() {
   actionNotice = "";
   try {
-    const res = await fetch("/api/requirement", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
+  const res = await fetch("/api/requirement", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ markdown: markdownEditor.getValue() }),
-    });
-    state = await res.json();
-    els.save.textContent = `Compiled · Spec ${state.health?.spec.state ?? ""}`;
-    render();
+  });
+  state = await res.json();
+  els.save.textContent = `Compiled · Spec ${state.health?.spec.state ?? ""}`;
+  render();
   } catch {
     els.save.textContent = "Save failed";
   } finally {
@@ -1022,7 +1284,7 @@ async function runStageAction(id) {
       return;
     }
     const res = await fetch("/api/create-in-place", { method: "POST" });
-    state = await res.json();
+    takeState(await res.json());
     focusedSection = "Business Rules";
     render();
     jumpToSection("Business Rules");
@@ -1038,7 +1300,7 @@ async function runStageAction(id) {
     actionNotice = "Writing the improve brief…";
     setActionHint(actionNotice);
     renderActivity();
-    await runBackgroundAction("Improving…", "/api/improve", { adapter: "cursor" }, "improve");
+    await runBackgroundAction("Improving…", "/api/improve", { adapter: recordedAdapter() }, "improve");
     return;
   }
   if (id === "review-improve") {
@@ -1075,7 +1337,7 @@ async function runStageAction(id) {
     setMeter("build", "running");
     renderActivity();
     setActionHint(actionNotice);
-    await runBackgroundAction("Implementing…", "/api/implement", { adapter: "cursor" }, "implement");
+    await runBackgroundAction("Implementing…", "/api/implement", { adapter: recordedAdapter() }, "implement");
     return;
   }
   if (id === "ignore-build") {
@@ -1097,7 +1359,7 @@ async function runStageAction(id) {
     await runBackgroundAction(
       "Fixing from proof…",
       "/api/implement",
-      { adapter: "cursor", fromProof: true },
+      { adapter: recordedAdapter(), fromProof: true },
       "implement",
     );
     return;
@@ -1293,8 +1555,55 @@ async function runNextAction(busyLabel, url, body) {
   }
 }
 
+async function recordSetup(body) {
+  if (els.stackError) els.stackError.textContent = "";
+  for (const btn of [els.codingManual, els.codingCursor, els.codingCopilot, els.stackNextjs, els.stackAmplify]) {
+    if (btn) btn.disabled = true;
+  }
+  const res = await fetch("/api/setup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = await res.json();
+  if (!res.ok) {
+    for (const btn of [els.codingManual, els.codingCursor, els.codingCopilot, els.stackNextjs, els.stackAmplify]) {
+      if (btn) btn.disabled = false;
+    }
+    if (els.stackError) els.stackError.textContent = payload.error ?? "Could not record setup.";
+    return;
+  }
+  pendingCoding = null;
+  state = payload;
+  actionNotice = "";
+  render();
+}
+
+async function onCodingChoice(coding) {
+  const repo = state?.productRepo;
+  const needStack = Boolean(repo?.implement && repo?.empty && !repo?.recorded);
+  if (coding === "manual") {
+    pendingCoding = null;
+    await recordSetup({ coding: "manual" });
+    return;
+  }
+  if (needStack) {
+    pendingCoding = coding;
+    renderSetupGate(state);
+    return;
+  }
+  await recordSetup({ coding });
+}
+
 async function recordStack(id) {
   if (els.stackError) els.stackError.textContent = "";
+  const repo = state?.productRepo;
+  const needCoding = Boolean(repo?.implement && repo?.adapterRecorded === false);
+  if (needCoding || pendingCoding) {
+    const coding = pendingCoding ?? "cursor";
+    await recordSetup({ coding, stack: id });
+    return;
+  }
   if (els.stackNextjs) els.stackNextjs.disabled = true;
   if (els.stackAmplify) els.stackAmplify.disabled = true;
   const res = await fetch("/api/stack", {
@@ -1314,8 +1623,34 @@ async function recordStack(id) {
   render();
 }
 
+els.codingManual?.addEventListener("click", () => void onCodingChoice("manual"));
+els.codingCursor?.addEventListener("click", () => void onCodingChoice("cursor"));
+els.codingCopilot?.addEventListener("click", () => void onCodingChoice("copilot"));
 els.stackNextjs?.addEventListener("click", () => void recordStack("nextjs-default"));
 els.stackAmplify?.addEventListener("click", () => void recordStack("amplify-gen2"));
+
+els.homeBtn?.addEventListener("click", () => void goHome());
+els.allRequirements?.addEventListener("click", () => void goHome());
+els.packMenu?.addEventListener("contextmenu", (event) => event.preventDefault());
+els.packMenuDelete?.addEventListener("click", () => openDeleteDialog());
+els.deleteCancel?.addEventListener("click", () => els.deleteDialog?.close());
+els.deleteConfirm?.addEventListener("click", () => void confirmDeletePack());
+els.deleteDialog?.addEventListener("cancel", () => els.deleteDialog?.close());
+document.addEventListener("pointerdown", (event) => {
+  if (els.packMenu?.contains(event.target)) return;
+  if (event.button === 2) return;
+  hidePackMenu();
+});
+document.addEventListener("contextmenu", (event) => {
+  if (els.packMenu?.contains(event.target)) return;
+  if (event.target instanceof Element && event.target.closest(".pack-row")) return;
+  hidePackMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") hidePackMenu();
+});
+window.addEventListener("resize", hidePackMenu);
+window.addEventListener("scroll", hidePackMenu);
 
 els.createNew.addEventListener("click", async () => {
   els.createError.textContent = "";
@@ -1329,8 +1664,10 @@ els.createNew.addEventListener("click", async () => {
     els.createError.textContent = body.error ?? "Could not create.";
     return;
   }
-  state = body;
+  takeState(body);
+  currentView = "define";
   actionNotice = "";
+  if (els.newId) els.newId.value = "";
   render();
   jumpToSection("Business Rules");
 });

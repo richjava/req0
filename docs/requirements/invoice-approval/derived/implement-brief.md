@@ -4,7 +4,7 @@ Portable coding-agent brief. Read this file, then the compiled `derived/spec.jso
 
 ## Stack
 
-This product repo is empty (no customer app at the repo root). Recorded stack: Amplify Gen 2, Next.js, Cognito, Data, S3. Use it. Do not ask for another stack. ampx reads AWS_PROFILE, inherited AWS_ACCESS_KEY_ID, or ~/.aws — not the .env file. If none of those exist, stop and tell the owner to run npx ampx configure profile. Do not ask for keys. Do not print env values. Req0's own CLI package.json does not count as a customer app. Adapter: manual.
+This repo already has a product app. Implement in the existing stack. Do not scaffold a second application. Recorded stack: Amplify Gen 2, Next.js, Cognito, Data, S3. ampx reads AWS_PROFILE, inherited AWS_ACCESS_KEY_ID, or ~/.aws — not the .env file. If none of those exist, stop and tell the owner to run npx ampx configure profile. Do not ask for keys. Do not print env values. Adapter: cursor.
 
 Default stack (empty repo only): Next.js App Router, TypeScript, Tailwind, shadcn/ui, Prisma, PostgreSQL, Better Auth.
 

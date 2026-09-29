@@ -13,5 +13,5 @@
 | **Proof** | Browser QA against the compiled qa-plan (Milestone 4). States: Not yet / Passed / Failed / Needs review / Stale. |
 | **Observable** | On a business rule: what a person or test could notice. |
 | **Persona** | Test user for a matrix role. Never a production account. |
-| **Coding-agent adapter** | Thin launcher around a portable implement brief. Cursor is the first adapter, not the product. |
+| **Coding-agent adapter** | Thin launcher around a portable implement brief. Cursor and Copilot CLI are first adapters, not the product. |
 | **Fence** | A locked decision to stop the project becoming a second product. |

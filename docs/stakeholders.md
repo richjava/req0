@@ -20,7 +20,7 @@ Use cases and the permission matrix are the interaction contract. Optional `UI n
 
 ### Developer
 
-No ticket archaeology. A portable `derived/implement-brief.md` briefs whichever coding agent is configured. Cursor is the first adapter; `--adapter=manual` works for any coding agent. Launch stays gated on Ready. The developer will review diffs against named IDs (`BR-003`). Matching an existing repo is the agent’s job.
+No ticket archaeology. A portable `derived/implement-brief.md` briefs whichever coding agent is configured. Cursor and Copilot CLI are first adapters; `--adapter=manual` works for any coding agent. Launch stays gated on Ready. The developer will review diffs against named IDs (`BR-003`). Matching an existing repo is the agent’s job.
 
 ### QA Analyst
 

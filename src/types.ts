@@ -83,7 +83,7 @@ export type StageBoard = {
   ready: StageAction;
   build: StageAction;
   proof: StageAction;
-  /** Primary after a failed or review proof. Rebuild stays on the build pill. */
+  /** Primary after a failed or review proof. Reimplement stays on the build pill. */
   fixFromProof?: StageAction;
   /** Shown on a failed Build so the owner can unlock Prove. */
   ignoreBuild?: StageAction;
@@ -104,6 +104,7 @@ export type PipelineBranch = {
   view: PipelineViewId;
   tone: PipelineTone;
   badge?: string;
+  mark?: "fail" | "block";
 };
 
 export type PipelineNode = {
@@ -112,6 +113,7 @@ export type PipelineNode = {
   view: PipelineViewId;
   tone: PipelineTone;
   badge?: string;
+  mark?: "fail" | "block";
   hidden?: boolean;
   children?: PipelineBranch[];
 };
@@ -119,6 +121,22 @@ export type PipelineNode = {
 export type PipelineView = {
   nodes: PipelineNode[];
   implementOwned: boolean;
+};
+
+/** Cockpit home row. File keys stay spec / ready / build / proof. */
+export type PackListMeterKey = "spec" | "ready" | "build" | "proof";
+
+export type PackListMeter = {
+  key: PackListMeterKey;
+  label: string;
+  tone: PipelineTone;
+  badge: string;
+};
+
+export type PackListItem = {
+  id: string;
+  title: string;
+  meters: PackListMeter[];
 };
 
 export type ReadyState = "not_yet" | "blocked" | "ready";
@@ -193,7 +211,7 @@ export type JevRun = {
   answers: JevAnswer[];
 };
 
-export type AdapterId = "cursor" | "manual";
+export type AdapterId = "cursor" | "copilot" | "manual";
 
 export type StackChoice = {
   id: string;
@@ -213,6 +231,8 @@ export type ProductRepo = {
   stack: StackChoice;
   recorded: boolean;
   adapter: AdapterId;
+  /** False until req0.json records adapter or implement: false. */
+  adapterRecorded?: boolean;
   implement: boolean;
 };
 
@@ -236,7 +256,7 @@ export type BuildRun = {
   adapter: AdapterId;
   at: string;
   message?: string;
-  /** Cursor agent pid this Req0 process is following. Ignored after restart. */
+  /** Agent pid this Req0 process is following. Ignored after restart. */
   pid?: number;
   /** Owner chose Ignore. Prove may run even if state is failed. */
   ignored?: boolean;

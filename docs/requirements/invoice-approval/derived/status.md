@@ -4,8 +4,8 @@ Ready. Zero blockers, 8 nits. Implementation is next.
 
 - Spec: valid
 - Ready: ready (passed) · 0.79
-- Build: not_yet
-- Proof: not_yet (no runtime)
+- Build: failed
+- Proof: not_yet
 - Next: Implement
 - Ready blockers: 0
 - Ready nits: 8

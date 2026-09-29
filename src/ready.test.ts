@@ -273,7 +273,7 @@ describe("scoreboard", () => {
     );
     expect(withRuntime.nextAction.id).toBe("prove");
     expect(withRuntime.nextAction.enabled).toBe(true);
-    expect(withRuntime.stages?.build.label).toBe("Rebuild");
+    expect(withRuntime.stages?.build.label).toBe("Reimplement");
     expect(withRuntime.stages?.proof.label).toBe("Prove");
     expect(withRuntime.howThisIsGoing).toBe("");
     const reprove = applyReadyToHealth(
@@ -298,7 +298,7 @@ describe("scoreboard", () => {
       ready,
     );
     expect(failedProof.nextAction).toMatchObject({ id: "fix-from-proof", label: "Fix from proof", enabled: true });
-    expect(failedProof.stages?.build.label).toBe("Rebuild");
+    expect(failedProof.stages?.build.label).toBe("Reimplement");
     expect(failedProof.howThisIsGoing).toMatch(/Fix from proof/);
     const proved = applyReadyToHealth(
       {

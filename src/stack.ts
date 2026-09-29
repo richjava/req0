@@ -1,6 +1,9 @@
 import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { parseAdapterId } from "./adapter.js";
 import type { AdapterId, ProductRepo, Req0Config, StackChoice } from "./types.js";
+
+export type CodingChoice = "manual" | "cursor" | "copilot";
 
 export const REQ0_CONFIG_FILE = "req0.json";
 export const ENV_EXAMPLE_FILE = ".env.example";
@@ -45,6 +48,14 @@ export function resolveStackId(id: string): StackChoice | null {
 
 export function needsStackChoice(repo: ProductRepo): boolean {
   return Boolean(repo.root) && repo.implement && repo.empty && !repo.recorded;
+}
+
+export function needsCodingChoice(repo: ProductRepo): boolean {
+  return Boolean(repo.root) && repo.implement && repo.adapterRecorded === false;
+}
+
+export function needsSetupGate(repo: ProductRepo): boolean {
+  return needsCodingChoice(repo) || needsStackChoice(repo);
 }
 
 export class StackRequiredError extends Error {
@@ -108,28 +119,29 @@ export async function writeReq0Config(repoRoot: string, config: Req0Config): Pro
 export async function inspectProductRepo(packRoot: string): Promise<ProductRepo> {
   const root = findRepoRootFromPack(packRoot);
   if (!root) {
-    return { root: null, empty: true, stack: DEFAULT_STACK, recorded: false, adapter: "manual", implement: true };
+    return {
+      root: null,
+      empty: true,
+      stack: DEFAULT_STACK,
+      recorded: false,
+      adapter: "cursor",
+      adapterRecorded: false,
+      implement: true,
+    };
   }
   const config = await readReq0Config(root);
   const implement = config?.implement !== false;
   const empty = !(await hasCustomerApp(root));
   const recorded = resolveRecordedStack(config?.stack);
-  if (recorded) {
-    return {
-      root,
-      empty,
-      stack: recorded,
-      recorded: true,
-      adapter: config?.adapter === "cursor" ? "cursor" : "manual",
-      implement,
-    };
-  }
+  const adapter = parseAdapterId(config?.adapter) ?? "cursor";
+  const adapterRecorded = config?.implement === false || parseAdapterId(config?.adapter) !== null;
   return {
     root,
     empty,
-    stack: DEFAULT_STACK,
-    recorded: false,
-    adapter: config?.adapter === "cursor" ? "cursor" : "manual",
+    stack: recorded ?? DEFAULT_STACK,
+    recorded: Boolean(recorded),
+    adapter,
+    adapterRecorded,
     implement,
   };
 }
@@ -145,6 +157,27 @@ export async function recordStack(repoRoot: string, id: string): Promise<StackCh
   await writeReq0Config(repoRoot, { stack });
   await writeAmplifyEnvExampleIfMissing(repoRoot, stack);
   return stack;
+}
+
+export async function recordProjectSetup(
+  repoRoot: string,
+  input: { coding: CodingChoice; stack?: string },
+): Promise<Req0Config> {
+  if (input.coding === "manual") {
+    await writeReq0Config(repoRoot, { implement: false });
+    return (await readReq0Config(repoRoot)) ?? { implement: false };
+  }
+  const updates: Req0Config = { adapter: input.coding, implement: true };
+  if (input.stack) {
+    const stack = resolveStackId(input.stack);
+    if (!stack) throw new UnknownStackError(input.stack);
+    updates.stack = stack;
+    await writeReq0Config(repoRoot, updates);
+    await writeAmplifyEnvExampleIfMissing(repoRoot, stack);
+  } else {
+    await writeReq0Config(repoRoot, updates);
+  }
+  return (await readReq0Config(repoRoot)) ?? updates;
 }
 
 export async function writeAmplifyEnvExampleIfMissing(

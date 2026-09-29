@@ -3,7 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasJevAccess, JevRequestError, JevUnavailableError } from "./jev.js";
-import { implementPack, finishImplement, ignoreBuild, launchImprove, stopImplement, StopImplementLockedError, writeImproveBrief, checkPack, compilePack, createPack, findRequirementsDir, listPacks, provePack, writeRequirement } from "./pack.js";
+import { implementPack, finishImplement, ignoreBuild, launchImprove, stopImplement, StopImplementLockedError, writeImproveBrief, checkPack, compilePack, createPack, deletePack, findRequirementsDir, listPacks, provePack, summarizePacks, writeRequirement } from "./pack.js";
 import { IgnoreBuildLockedError } from "./ready.js";
 import { ImproveLockedError } from "./improve.js";
 import {
@@ -15,10 +15,11 @@ import {
   rejectImproveReview,
 } from "./improve-review.js";
 import type { LaunchAdapterResult } from "./implement.js";
-import { inspectProductRepo, recordStack, UnknownStackError } from "./stack.js";
+import { inspectProductRepo, needsStackChoice, recordProjectSetup, recordStack, UnknownStackError } from "./stack.js";
+import { adapterDisplayName, parseAdapterId } from "./adapter.js";
 import { pipelineView, sectionCatalog } from "./stages.js";
 import type { PackPaths } from "./pack.js";
-import type { ActivityLevel, ActivityLine, CompileResult } from "./types.js";
+import type { ActivityLevel, ActivityLine, AdapterId, CompileResult } from "./types.js";
 
 const cockpitDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../cockpit");
 
@@ -87,7 +88,44 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
         return;
       }
       state.pack = chosen;
+      state.activity = [];
       await refresh(state);
+      await sendJson(res, await snapshot(state));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/home") {
+      state.pack = null;
+      state.last = null;
+      state.activity = [];
+      await sendJson(res, await snapshot(state));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/delete") {
+      const body = await readJson(req);
+      const id = String(body["id"] ?? "").trim();
+      const requirementsDir = await findRequirementsDir(state.cwd);
+      if (!requirementsDir) {
+        sendJson(res, { error: "No docs/requirements directory found." }, 400);
+        return;
+      }
+      const packs = await listPacks(requirementsDir);
+      const chosen = packs.find((p) => p.id === id);
+      if (!chosen) {
+        sendJson(res, { error: `Unknown pack "${id}".` }, 404);
+        return;
+      }
+      if (state.busy && state.pack?.root === chosen.root) {
+        sendJson(res, { error: "Stop the current run before deleting this requirement." }, 409);
+        return;
+      }
+      if (state.pack?.root === chosen.root) {
+        state.pack = null;
+        state.last = null;
+        state.activity = [];
+      }
+      await deletePack(chosen);
       await sendJson(res, await snapshot(state));
       return;
     }
@@ -168,7 +206,7 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
         return;
       }
       const body = await readJson(req);
-      const adapter = body["adapter"] === "manual" ? "manual" : "cursor";
+      const adapter = parseAdapterId(body["adapter"]) ?? "cursor";
       try {
         const written = await writeImproveBrief(state.pack, state.last);
         state.last = written.result;
@@ -197,12 +235,12 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
         });
         return;
       }
-      pushActivity(state, "Launching Cursor to patch requirement.md…");
+      pushActivity(state, `Launching ${adapterDisplayName(adapter)} to patch requirement.md…`);
       await yieldEventLoop();
       await sendJson(res, {
         ...(await snapshot(state)),
         started: true,
-        message: "Wrote the brief. Launching Cursor…",
+        message: `Wrote the brief. Launching ${adapterDisplayName(adapter)}…`,
       });
       void runImprove(state, pack, adapter);
       return;
@@ -219,11 +257,7 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
     }
 
     if (req.method === "POST" && url.pathname === "/api/stack") {
-      if (!state.pack) {
-        sendJson(res, { error: "No pack selected." }, 400);
-        return;
-      }
-      const repo = await inspectProductRepo(state.pack.root);
+      const repo = await inspectProductRepo(await inspectFrom(state));
       if (!repo.root) {
         sendJson(res, { error: "No product repo root, so the stack cannot be recorded." }, 400);
         return;
@@ -243,6 +277,37 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/setup") {
+      const repo = await inspectProductRepo(await inspectFrom(state));
+      if (!repo.root) {
+        sendJson(res, { error: "No product repo root, so setup cannot be recorded." }, 400);
+        return;
+      }
+      const body = await readJson(req);
+      const coding = body["coding"];
+      if (coding !== "manual" && coding !== "cursor" && coding !== "copilot") {
+        sendJson(res, { error: "Choose I'll write the code, Cursor, or Copilot." }, 400);
+        return;
+      }
+      const stackId = typeof body["stack"] === "string" && body["stack"].trim() ? String(body["stack"]) : undefined;
+      if (coding !== "manual" && !stackId && needsStackChoice({ ...repo, implement: true })) {
+        sendJson(res, { error: "Choose a stack for Cursor or Copilot on an empty repo." }, 400);
+        return;
+      }
+      try {
+        await recordProjectSetup(repo.root, stackId ? { coding, stack: stackId } : { coding });
+        await refresh(state);
+        await sendJson(res, await snapshot(state));
+      } catch (err) {
+        sendJson(
+          res,
+          { error: err instanceof Error ? err.message : "Could not record setup." },
+          err instanceof UnknownStackError ? 400 : 409,
+        );
+      }
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/implement") {
       if (!state.pack) {
         sendJson(res, { error: "No pack selected." }, 400);
@@ -253,7 +318,7 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
         return;
       }
       const body = await readJson(req);
-      const adapter = body["adapter"] === "manual" ? "manual" : "cursor";
+      const adapter = parseAdapterId(body["adapter"]) ?? "cursor";
       const stack = typeof body["stack"] === "string" && body["stack"].trim() ? String(body["stack"]) : undefined;
       const fromProof = body["fromProof"] === true;
       try {
@@ -419,6 +484,7 @@ async function snapshot(state: AppState) {
     packId: state.pack?.id ?? null,
     packRoot: state.pack?.root ?? null,
     packs: packs.map((p) => p.id),
+    packList: await summarizePacks(packs),
     markdown: state.last?.markdown ?? "",
     health,
     spec: state.last?.spec ?? null,
@@ -426,11 +492,17 @@ async function snapshot(state: AppState) {
     sections: sectionCatalog(),
     proofReport,
     hasApiKey: hasJevAccess(),
-    productRepo: state.pack ? await inspectProductRepo(state.pack.root) : null,
+    productRepo: await inspectProductRepo(await inspectFrom(state)),
     activity: state.activity,
     busy: state.busy,
     improveReview,
   };
+}
+
+async function inspectFrom(state: AppState): Promise<string> {
+  if (state.pack) return state.pack.root;
+  const requirementsDir = await findRequirementsDir(state.cwd);
+  return requirementsDir ?? path.join(state.cwd, "docs", "requirements");
 }
 
 async function decideImproveReview(state: AppState, res: ServerResponse, decision: "accept" | "reject"): Promise<void> {
@@ -464,7 +536,7 @@ async function decideImproveReview(state: AppState, res: ServerResponse, decisio
   });
 }
 
-async function runImprove(state: AppState, pack: PackPaths, adapter: "cursor" | "manual"): Promise<void> {
+async function runImprove(state: AppState, pack: PackPaths, adapter: AdapterId): Promise<void> {
   try {
     const launched = await launchImprove(pack, { adapter });
     pushActivity(state, launched.message, launched.ok ? "ok" : "error");
@@ -479,7 +551,7 @@ async function runImplement(
   state: AppState,
   pack: PackPaths,
   launch: LaunchAdapterResult,
-  adapter: "cursor" | "manual",
+  adapter: AdapterId,
 ): Promise<void> {
   try {
     const done = await finishImplement(pack, launch, adapter);
@@ -560,6 +632,8 @@ function contentType(file: string): string {
   if (file.endsWith(".js")) return "text/javascript; charset=utf-8";
   if (file.endsWith(".svg")) return "image/svg+xml";
   if (file.endsWith(".png")) return "image/png";
+  if (file.endsWith(".ico")) return "image/x-icon";
+  if (file.endsWith(".webmanifest")) return "application/manifest+json";
   return "text/html; charset=utf-8";
 }
 

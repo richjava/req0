@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Cache-Control" content="no-store" />
     <title>Req0 — Requirement Owner</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
@@ -12,7 +17,10 @@
     <div class="app-shell app-shell-pipeline">
       <header class="topbar">
         <div class="topbar-start">
-          <img class="logo-horiz" src="/req0-logo-horiz.png" alt="Req0" width="148" height="36" />
+          <button type="button" class="home-btn" id="home-btn" aria-label="All requirements">
+            <img class="logo-horiz" src="/req0-logo-horiz.png" alt="Req0" width="148" height="36" />
+          </button>
+          <button type="button" class="btn-secondary hidden" id="all-requirements">All requirements</button>
           <div class="topbar-copy">
             <p class="sidebar-pack" id="pack-title">Loading…</p>
             <p class="going" id="how-going">Loading…</p>
@@ -25,9 +33,30 @@
       </header>
       <div class="stack-gate hidden" id="stack-gate">
         <div class="stack-gate-inner">
-          <h1 class="stack-gate-title">Choose a stack</h1>
-          <p class="stack-gate-copy" id="stack-copy">This product repo is empty and no stack is recorded yet. Pick one to continue. Req0 writes it to req0.json. Amplify also writes a names-only .env.example if that file is missing.</p>
-          <div class="stack-gate-actions" id="stack-bar">
+          <h1 class="stack-gate-title" id="setup-title">Set up this project</h1>
+          <p class="stack-gate-copy" id="setup-copy">
+            Req0 writes your choices to req0.json. You can change them later by editing that file.
+          </p>
+          <div class="stack-gate-section" id="coding-section">
+            <p class="setup-label">How should code get written?</p>
+            <div class="stack-gate-actions" id="coding-bar">
+              <button type="button" class="stack-choice" data-coding="manual" id="coding-manual">
+                <strong>I’ll write the code</strong>
+                <span>Req0 stays on the requirement and QA. Implement stays off.</span>
+              </button>
+              <button type="button" class="stack-choice" data-coding="cursor" id="coding-cursor">
+                <strong>Cursor</strong>
+                <span>After Ready, Req0 starts a Cursor agent with the implement brief.</span>
+              </button>
+              <button type="button" class="stack-choice" data-coding="copilot" id="coding-copilot">
+                <strong>Copilot</strong>
+                <span>After Ready, Req0 starts GitHub Copilot CLI with the implement brief.</span>
+              </button>
+            </div>
+          </div>
+          <div class="stack-gate-section hidden" id="stack-section">
+            <p class="setup-label">Which stack?</p>
+            <div class="stack-gate-actions" id="stack-bar">
             <button type="button" class="stack-choice" data-stack="nextjs-default" id="stack-nextjs">
               <strong>Next.js default</strong>
               <span>App Router, TypeScript, Tailwind, shadcn/ui, Prisma, PostgreSQL, Better Auth</span>
@@ -36,24 +65,31 @@
               <strong>Amplify Gen 2</strong>
               <span>Next.js, Cognito, Data, S3</span>
             </button>
+            </div>
           </div>
           <p class="hint stack-gate-error" id="stack-error"></p>
         </div>
       </div>
       <div class="main" id="cockpit-app">
+        <div class="pack-home" id="pack-home">
+          <h1 class="pack-home-title">Requirements</h1>
+          <p class="hint hidden" id="pack-empty">No requirements yet. Create one below.</p>
+          <ul id="pack-list" class="pack-list"></ul>
+          <div class="create-bar" id="create-bar">
+            <label class="field">
+              New requirement id
+              <input class="input" id="new-id" placeholder="001" autocomplete="off" />
+            </label>
+            <button type="button" class="btn-secondary" id="create-new">Create pack</button>
+            <p class="hint" id="create-error"></p>
+          </div>
+        </div>
+
+        <div class="pack-workspace hidden" id="pack-workspace">
         <section class="pipeline" aria-label="Pipeline">
 
           <div id="pipeline-graph" class="pipeline-graph"></div>
         </section>
-
-        <div class="create-bar hidden" id="create-bar">
-          <label class="field">
-            New requirement id
-            <input class="input" id="new-id" placeholder="invoice-approval" autocomplete="off" />
-          </label>
-          <button type="button" class="btn-secondary" id="create-new">Create pack</button>
-          <p class="hint" id="create-error"></p>
-        </div>
 
         <div class="stage-workspace">
           <nav id="stage-nav" class="stage-nav" aria-label="Stages"></nav>
@@ -94,7 +130,7 @@
                 <div class="stage-actions">
                   <button type="button" class="pill-btn cta" id="action-build" hidden disabled></button>
                   <button type="button" class="pill-btn cta" id="action-build-ignore" hidden disabled></button>
-                  <button type="button" class="pill-btn cta cta-danger" id="action-build-stop" hidden disabled></button>
+                  <button type="button" class="pill-btn cta" id="action-build-stop" hidden disabled></button>
                 </div>
               </div>
               <p class="nav-label">Activity</p>
@@ -116,6 +152,7 @@
             </section>
           </div>
         </div>
+        </div>
       </div>
     </div>
     <dialog id="ignore-build-dialog" class="confirm-dialog">
@@ -124,6 +161,18 @@
         <button type="button" class="btn-secondary" id="ignore-build-no">No</button>
         <button type="button" class="btn-primary" id="ignore-build-yes">Yes</button>
         <button type="button" class="btn-secondary" id="ignore-build-cancel">Cancel</button>
+      </div>
+    </dialog>
+    <div class="context-menu hidden" id="pack-menu" role="menu" hidden>
+      <button type="button" class="context-menu-item context-menu-danger" role="menuitem" id="pack-menu-delete">
+        Delete
+      </button>
+    </div>
+    <dialog id="delete-pack-dialog" class="confirm-dialog">
+      <p id="delete-pack-copy">Delete this requirement?</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-secondary" id="delete-pack-cancel">Cancel</button>
+        <button type="button" class="btn-primary cta-danger" id="delete-pack-confirm">Delete</button>
       </div>
     </dialog>
     <script src="/app.js" type="module"></script>

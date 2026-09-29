@@ -157,7 +157,25 @@ body {
 }
 
 .stack-gate-inner {
-  width: min(32rem, 100%);
+  width: min(36rem, 100%);
+}
+
+.setup-label {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-12);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.stack-gate-section + .stack-gate-section {
+  margin-top: var(--space-5);
+}
+
+.stack-choice.is-selected {
+  border-color: var(--color-primary);
+  background: var(--surface-hover);
 }
 
 .stack-gate-title {
@@ -246,6 +264,28 @@ body {
   height: 50px;
   width: auto;
   flex-shrink: 0;
+}
+
+.home-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.home-btn:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+
+#all-requirements {
+  flex-shrink: 0;
+  white-space: nowrap;
+  align-self: flex-start;
 }
 
 .topbar-copy {
@@ -958,6 +998,119 @@ body {
   align-items: flex-end;
 }
 
+.pack-home {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 52rem;
+}
+
+.pack-home-title {
+  margin: 0;
+  font-size: var(--text-20);
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.pack-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.pack-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.pack-row {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-2);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.pack-row:hover {
+  background: var(--surface-hover);
+}
+
+.pack-row-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pack-row-copy strong {
+  font-size: var(--text-16);
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.pack-row-id {
+  font-size: var(--text-12);
+  color: var(--text-muted);
+}
+
+.pack-row-meters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.pack-meter {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-status-idle-bg);
+  color: var(--color-status-idle);
+  min-width: 4.75rem;
+}
+
+.pack-meter-name {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.pack-meter[data-tone="ok"] {
+  background: var(--color-status-ok-bg);
+  color: var(--color-status-ok);
+}
+
+.pack-meter[data-tone="bad"] {
+  background: var(--color-status-bad-bg);
+  color: var(--color-status-bad);
+}
+
+.pack-meter[data-tone="draft"],
+.pack-meter[data-tone="progress"] {
+  background: var(--color-status-draft-bg);
+  color: var(--color-status-draft);
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -1445,6 +1598,49 @@ body {
   justify-content: flex-end;
 }
 
+.context-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 10rem;
+  padding: var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-3);
+}
+
+.context-menu-item {
+  appearance: none;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-13);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-menu-item:hover,
+.context-menu-item:focus-visible {
+  background: var(--surface-hover);
+  outline: none;
+}
+
+.context-menu-danger {
+  color: var(--color-status-bad);
+}
+
+.context-menu-danger:hover,
+.context-menu-danger:focus-visible {
+  background: var(--color-status-bad-bg);
+}
+
 @media (max-width: 768px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -1461,6 +1657,15 @@ body {
   .create-bar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .pack-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pack-row-meters {
+    justify-content: flex-start;
   }
 
   .topbar-actions {

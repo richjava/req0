@@ -1,9 +1,19 @@
+import { adapterDisplayName } from "./adapter.js";
 import { fixFromProofAllowed } from "./fix-from-proof.js";
 import { NOUL_PASS } from "./gates.js";
 import { improveAllowed, improveHint } from "./improve.js";
 import { STACK_CHOICE_HINT } from "./stack.js";
 import { OPTIONAL_H2, REQUIRED_H2 } from "./types.js";
-import type { BuildMeter, Health, PipelineTone, PipelineView, ReadyMeter, StageAction, StageBoard } from "./types.js";
+import type {
+  BuildMeter,
+  Health,
+  PackListMeter,
+  PipelineTone,
+  PipelineView,
+  ReadyMeter,
+  StageAction,
+  StageBoard,
+} from "./types.js";
 
 export function buildAllowsProve(build: BuildMeter): boolean {
   if (build.owned === false) return true;
@@ -136,9 +146,17 @@ export function pipelineView(health: Health | null, packPresent: boolean): Pipel
         view: "define",
         tone: defineTone,
         badge: defineBadge,
+        mark: defineTone === "bad" ? "block" : undefined,
         children: [
           { id: "spec", label: "Spec", view: "spec", tone: specTone, badge: specBadge },
-          { id: "judgment", label: "Judgment", view: "judgment", tone: judgmentTone, badge: judgmentBadge },
+          {
+            id: "judgment",
+            label: "Judgment",
+            view: "judgment",
+            tone: judgmentTone,
+            badge: judgmentBadge,
+            mark: judgmentTone === "bad" ? "block" : undefined,
+          },
         ],
       },
       {
@@ -147,9 +165,17 @@ export function pipelineView(health: Health | null, packPresent: boolean): Pipel
         view: "implement",
         tone: implementTone,
         badge: implementBadge,
+        mark: implementTone === "bad" ? "fail" : undefined,
         hidden: !implementOwned,
       },
-      { id: "qa", label: "QA", view: "qa", tone: qaTone, badge: qaBadge },
+      {
+        id: "qa",
+        label: "QA",
+        view: "qa",
+        tone: qaTone,
+        badge: qaBadge,
+        mark: qaTone === "bad" ? "fail" : undefined,
+      },
       {
         id: "end",
         label: "End",
@@ -159,6 +185,30 @@ export function pipelineView(health: Health | null, packPresent: boolean): Pipel
       },
     ],
   };
+}
+
+export function packListMeters(health: Health | null, packPresent: boolean): PackListMeter[] {
+  const view = pipelineView(health, packPresent);
+  const define = view.nodes.find((node) => node.id === "define");
+  const spec = define?.children?.find((child) => child.id === "spec");
+  const judgment = define?.children?.find((child) => child.id === "judgment");
+  const implement = view.nodes.find((node) => node.id === "implement");
+  const qa = view.nodes.find((node) => node.id === "qa");
+  const meters: PackListMeter[] = [];
+  if (spec) meters.push({ key: "spec", label: spec.label, tone: spec.tone, badge: spec.badge ?? "" });
+  if (judgment) {
+    meters.push({ key: "ready", label: judgment.label, tone: judgment.tone, badge: judgment.badge ?? "" });
+  }
+  if (implement && !implement.hidden) {
+    meters.push({
+      key: "build",
+      label: implement.label,
+      tone: implement.tone,
+      badge: implement.badge ?? "",
+    });
+  }
+  if (qa) meters.push({ key: "proof", label: qa.label, tone: qa.tone, badge: qa.badge ?? "" });
+  return meters;
 }
 
 export function computeStages(health: Health, ready: ReadyMeter): StageBoard {
@@ -197,20 +247,21 @@ export function computeStages(health: Health, ready: ReadyMeter): StageBoard {
   const implementOwned = health.build.owned !== false;
   const neverSucceeded = health.build.state === "not_yet" || health.build.state === "failed";
   const needsStack = health.build.needsStack === true;
+  const agent = adapterDisplayName(health.build.adapter === "copilot" ? "copilot" : "cursor");
   const buildAction: StageAction = implementOwned
     ? {
         id: "implement",
         label:
-          health.build.state === "running" ? "Implementing" : neverSucceeded ? "Implement" : "Rebuild",
+          health.build.state === "running" ? "Implementing" : neverSucceeded ? "Implement" : "Reimplement",
         enabled: readyOk && health.build.state !== "running" && !needsStack,
         hint: needsStack
           ? STACK_CHOICE_HINT
           : health.build.state === "running"
-            ? "Cursor agent is running. Activity shows tools and messages as they happen."
+            ? `${agent} agent is running. Activity shows tools and messages as they happen.`
             : health.build.state === "failed"
             ? health.build.message
             : neverSucceeded
-              ? "Starts a Cursor agent with derived/implement-brief.md. Use --adapter=manual to skip launch."
+              ? `Starts a ${agent} agent with derived/implement-brief.md.`
               : health.build.message,
       }
     : {
@@ -236,7 +287,7 @@ export function computeStages(health: Health, ready: ReadyMeter): StageBoard {
         id: "fix-from-proof",
         label: "Fix from proof",
         enabled: true,
-        hint: "Starts a Cursor agent with the last proof-report.md and the implement brief. Does not edit requirement.md.",
+        hint: `Starts a ${agent} agent with the last proof-report.md and the implement brief. Does not edit requirement.md.`,
       }
     : undefined;
 
@@ -255,7 +306,7 @@ export function computeStages(health: Health, ready: ReadyMeter): StageBoard {
           id: "stop-implement",
           label: "Stop",
           enabled: true,
-          hint: "Stops the Cursor agent. Build stays failed until you Rebuild or Ignore.",
+          hint: `Stops the ${agent} agent. Build stays failed until you Reimplement or Ignore.`,
         }
       : undefined;
 

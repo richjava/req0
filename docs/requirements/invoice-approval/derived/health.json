@@ -82,19 +82,21 @@
     ]
   },
   "build": {
-    "state": "not_yet",
+    "state": "failed",
+    "adapter": "cursor",
+    "message": "Owner stopped Implement.",
     "needsStack": false
   },
   "proof": {
     "state": "not_yet",
-    "runtime": false,
+    "runtime": true,
     "findings": []
   },
   "nextAction": {
     "id": "implement",
     "label": "Implement",
     "enabled": true,
-    "hint": "Starts a Cursor agent with derived/implement-brief.md. Use --adapter=manual to skip launch."
+    "hint": "Owner stopped Implement."
   },
   "stages": {
     "ready": {
@@ -106,13 +108,19 @@
       "id": "implement",
       "label": "Implement",
       "enabled": true,
-      "hint": "Starts a Cursor agent with derived/implement-brief.md. Use --adapter=manual to skip launch."
+      "hint": "Owner stopped Implement."
     },
     "proof": {
       "id": "prove",
       "label": "Prove",
       "enabled": false,
-      "hint": "Blocked without fixtures/runtime.yaml (baseUrl and deterministic login)."
+      "hint": "Prove is locked until Build succeeded, or you Ignore a failed Build."
+    },
+    "ignoreBuild": {
+      "id": "ignore-build",
+      "label": "Ignore",
+      "enabled": true,
+      "hint": "Unlock Prove. You will be asked whether implementation succeeded."
     }
   },
   "howThisIsGoing": "Ready. Zero blockers, 8 nits. Implementation is next."

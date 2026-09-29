@@ -1,3 +1,4 @@
+import { adapterDisplayName } from "./adapter.js";
 import { createHash } from "node:crypto";
 import { NOUL_FAIL, NOUL_PASS } from "./gates.js";
 import { improveAllowed } from "./improve.js";
@@ -18,11 +19,11 @@ export function specHash(spec: SpecAst): string {
   return createHash("sha256").update(JSON.stringify(spec)).digest("hex");
 }
 
-/** Pids of Cursor agents this process launched and is still waiting on. */
+/** Pids of implement agents this process launched and is still waiting on. */
 export const followedImplementPids = new Set<number>();
 
 export const IMPLEMENT_INTERRUPTED =
-  "Implement was interrupted. This Req0 process is not following a Cursor agent. Rebuild or Fix from proof.";
+  "Implement was interrupted. This Req0 process is not following an implement agent. Reimplement or Fix from proof.";
 
 export function followImplementPid(pid?: number): void {
   if (typeof pid === "number" && pid > 0) followedImplementPids.add(pid);
@@ -300,7 +301,8 @@ function goingCopy(health: Health, ready: ReadyMeter): string {
       return proofGoing(health);
     }
     if (health.build.state === "running") {
-      return "Cursor agent is running. Activity shows tools and messages as they happen. Stop ends the run. Build Succeeded is not proof the app boots.";
+      const agent = adapterDisplayName(health.build.adapter === "copilot" ? "copilot" : "cursor");
+      return `${agent} agent is running. Activity shows tools and messages as they happen. Stop ends the run. Build Succeeded is not proof the app boots.`;
     }
     if (health.build.state === "stale") return "Spec changed after the last implement run. Build is stale.";
     return ready.nits > 0

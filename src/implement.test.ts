@@ -65,6 +65,7 @@ describe("implement lock", () => {
 
   it("describes both adapters", () => {
     expect(adapterInstructions("cursor", "derived/implement-brief.md")).toContain("Cursor");
+    expect(adapterInstructions("copilot", "derived/implement-brief.md")).toContain("Copilot");
     expect(adapterInstructions("manual", "derived/implement-brief.md")).toContain("does not start an agent");
   });
 
@@ -117,6 +118,23 @@ describe("implement lock", () => {
     expect(calls[1]?.at(-1)).toContain("implement-brief.md");
     expect(calls[1]).toContain("--output-format");
     expect(calls[1]).toContain("stream-json");
+  });
+
+  it("copilot adapter starts GitHub Copilot CLI with the brief", async () => {
+    const calls: string[][] = [];
+    const launched = await launchAdapter("copilot", "/tmp/invoice-desk", "/tmp/invoice-desk/derived/implement-brief.md", {
+      spawn: fakeSpawn(calls),
+      resolveCopilotBin: () => "/fake/copilot",
+      settleMs: 0,
+    });
+    expect(launched.ok).toBe(true);
+    expect(calls[0]?.slice(0, 2)).toEqual(["/fake/copilot", "-p"]);
+    expect(calls[0]).toContain("--no-ask-user");
+    expect(calls[0]).toContain("--allow-all");
+    expect(calls[0]).toContain("--output-format");
+    expect(calls[0]).toContain("json");
+    expect(calls[0]?.at(2)).toContain("implement-brief.md");
+    expect(calls.some((call) => call[0] === "open")).toBe(false);
   });
 
   it("can start the agent without opening the IDE", async () => {
@@ -213,6 +231,22 @@ describe("implement lock", () => {
     expect(summarizeAgentLine("Connection lost, reconnecting…")).toBe(
       "Connection lost, reconnecting…",
     );
+    expect(
+      summarizeAgentLine(
+        JSON.stringify({
+          type: "tool.execution_start",
+          data: { toolName: "bash", arguments: { command: "npx ampx sandbox --once" } },
+        }),
+      ),
+    ).toBe("Running npx ampx sandbox --once");
+    expect(
+      summarizeAgentLine(
+        JSON.stringify({
+          type: "assistant.message",
+          data: { content: "Scaffolding Next.js." },
+        }),
+      ),
+    ).toBe("Agent: Scaffolding Next.js.");
   });
 
   it("counts a started ampx sandbox --once tool call", () => {

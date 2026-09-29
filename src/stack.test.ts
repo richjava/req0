@@ -12,7 +12,10 @@ import {
   hasCustomerApp,
   inspectProductRepo,
   readReq0Config,
+  needsCodingChoice,
+  needsSetupGate,
   needsStackChoice,
+  recordProjectSetup,
   recordStack,
   resolveStackId,
   stackInstruction,
@@ -23,12 +26,19 @@ import {
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("product repo detection", () => {
-  it("treats the Req0 tool package.json as not a customer app", async () => {
-    expect(await hasCustomerApp(repoRoot)).toBe(false);
+  it("treats a package.json named req0 as not a customer app", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "req0-tool-pkg-"));
+    try {
+      await writeFile(path.join(dir, "package.json"), `${JSON.stringify({ name: "req0" }, null, 2)}\n`);
+      expect(await hasCustomerApp(dir)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
     const repo = await inspectProductRepo(path.join(repoRoot, "docs/requirements/invoice-approval"));
     expect(repo.root).toBe(repoRoot);
-    expect(repo.empty).toBe(true);
-    expect(repo.recorded).toBe(false);
+    expect(repo.recorded).toBe(true);
+    expect(repo.adapter).toBe("cursor");
+    expect(repo.adapterRecorded).toBe(true);
     expect(repo.implement).toBe(true);
   });
 
@@ -79,6 +89,30 @@ describe("product repo detection", () => {
         implement: true,
       }),
     ).toBe(false);
+  });
+
+  it("requires a coding choice until adapter or implement:false is recorded", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "req0-coding-"));
+    const pack = path.join(dir, "docs/requirements/demo-pack");
+    try {
+      const unset = await inspectProductRepo(pack);
+      expect(unset.adapterRecorded).toBe(false);
+      expect(needsCodingChoice(unset)).toBe(true);
+      expect(needsSetupGate(unset)).toBe(true);
+      await recordProjectSetup(dir, { coding: "copilot", stack: "nextjs-default" });
+      const after = await inspectProductRepo(pack);
+      expect(after.adapter).toBe("copilot");
+      expect(after.adapterRecorded).toBe(true);
+      expect(after.recorded).toBe(true);
+      expect(needsCodingChoice(after)).toBe(false);
+      expect(needsStackChoice(after)).toBe(false);
+      await recordProjectSetup(dir, { coding: "manual" });
+      const manual = await inspectProductRepo(pack);
+      expect(manual.implement).toBe(false);
+      expect(needsSetupGate(manual)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("resolves known stack ids and records one", async () => {

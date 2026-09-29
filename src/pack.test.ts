@@ -9,7 +9,7 @@ import { StackRequiredError } from "./stack.js";
 import { createMockJevClient } from "./jev.js";
 import { ProveLockedError } from "./proof.js";
 import { IgnoreBuildLockedError, specHash } from "./ready.js";
-import { checkPack, compilePack, createPack, ignoreBuild, implementPack, improvePack, packPaths, provePack } from "./pack.js";
+import { checkPack, compilePack, createPack, deletePack, ignoreBuild, implementPack, improvePack, listPacks, packPaths, provePack, resolveCockpitPack, resolvePack, summarizePacks } from "./pack.js";
 import { readReq0Config } from "./stack.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -29,8 +29,8 @@ describe("pack compile", () => {
     if (health.ready.state === "ready") {
       expect(health.ready.blockers).toBe(0);
       expect(health.nextAction.id).toBe("implement");
-      expect(health.build.needsStack).toBe(true);
-      expect(health.nextAction.enabled).toBe(false);
+      expect(health.build.needsStack).toBe(false);
+      expect(health.nextAction.enabled).toBe(true);
     } else if (health.ready.reason === "blockers") {
       expect(health.ready.blockers).toBeGreaterThan(0);
       expect(health.nextAction.label).toBe("Improve it");
@@ -48,7 +48,7 @@ describe("pack compile", () => {
       "utf8",
     );
     expect(brief).toContain("BR-001");
-    expect(brief).toContain("This product repo is empty");
+    expect(brief).toMatch(/This product repo is empty|already has a product app/);
   });
 
   it("creates a drafting pack from a kebab folder", async () => {
@@ -57,7 +57,11 @@ describe("pack compile", () => {
     try {
       const created = await createPack(root);
       const markdown = await readFile(created.requirement, "utf8");
-      expect(markdown).toContain("## Business Rules");
+      expect(markdown).toContain("# Untitled Requirement");
+      expect(markdown).not.toContain("**Id:**");
+      expect(markdown).toContain("## Description [Required]");
+      expect(markdown).toContain("## Business Rules [Required]");
+      expect(markdown).toMatch(/\| `REQ_XXX` \| Describe the relationship\./);
       const runtime = await readFile(created.runtime, "utf8");
       expect(runtime).toContain("baseUrl:");
       expect(runtime).toContain("#email");
@@ -403,6 +407,46 @@ login:
         true,
       );
       await expect(readFile(paths.buildRun, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("pack list", () => {
+  it("auto-selects a single pack for CLI but not for the cockpit", async () => {
+    const dir = path.join(repoRoot, "docs/requirements");
+    const packs = await listPacks(dir);
+    expect(await resolveCockpitPack(repoRoot)).toBeNull();
+    const cli = await resolvePack(repoRoot);
+    if (packs.length === 1) expect(cli?.id).toBe(packs[0]?.id);
+    else expect(cli).toBeNull();
+  });
+
+  it("opens a pack folder in the cockpit", async () => {
+    const pack = await resolveCockpitPack(path.join(repoRoot, "docs/requirements/invoice-approval"));
+    expect(pack?.id).toBe("invoice-approval");
+  });
+
+  it("summarizes title and meters", async () => {
+    const packs = await listPacks(path.join(repoRoot, "docs/requirements"));
+    const rows = await summarizePacks(packs);
+    const invoice = rows.find((row) => row.id === "invoice-approval");
+    expect(invoice?.title).toBe("Invoice approval");
+    expect(invoice?.meters.map((meter) => meter.key)).toEqual(
+      expect.arrayContaining(["spec", "ready", "proof"]),
+    );
+  });
+
+  it("deletes a pack folder", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "req0-pack-delete-"));
+    const dir = path.join(parent, "docs/requirements");
+    try {
+      await createPack(path.join(dir, "keep-pack"));
+      const doomed = await createPack(path.join(dir, "drop-pack"));
+      await deletePack(doomed);
+      const left = await listPacks(dir);
+      expect(left.map((pack) => pack.id)).toEqual(["keep-pack"]);
     } finally {
       await rm(parent, { recursive: true, force: true });
     }

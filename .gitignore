@@ -3,3 +3,12 @@ dist/
 .DS_Store
 *.log
 .env
+.env.*
+!.env.example
+.next/
+out/
+.amplify
+amplify_outputs*
+amplifyconfiguration*
+*.tsbuildinfo
+next-env.d.ts

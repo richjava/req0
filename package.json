@@ -8,30 +8,50 @@
     "req0": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.cli.json",
     "build:cockpit": "node scripts/build-markdown-editor.mjs",
+    "build:app": "next build",
     "req0": "tsx src/cli.ts",
     "start": "tsx src/cli.ts start",
+    "dev": "next dev",
+    "db:seed": "tsx scripts/seed.ts",
+    "sandbox": "npx ampx sandbox --once",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "engines": {
     "node": ">=22.15"
   },
+  "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1141.0",
+    "aws-amplify": "^6.22.0",
+    "next": "15.5.26",
+    "playwright": "^1.63.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
   "devDependencies": {
+    "@aws-amplify/backend": "^1.25.1",
+    "@aws-amplify/backend-cli": "^1.10.0",
+    "@aws-amplify/seed": "^1.1.5",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/language": "^6.12.3",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.39.16",
+    "@tailwindcss/postcss": "^4",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.5.2",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "aws-cdk-lib": "^2.271.0",
+    "constructs": "^10.8.1",
     "esbuild": "^0.25.9",
+    "js-yaml": "^5.4.2",
     "marked": "^18.0.14",
-    "tsx": "^4.20.5",
+    "tailwindcss": "^4",
+    "tsx": "4.19.4",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
-  },
-  "dependencies": {
-    "playwright": "^1.63.0"
   }
 }

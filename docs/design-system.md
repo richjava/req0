@@ -38,7 +38,7 @@ To ship dark later: fill in more `[data-theme="dark"]` if needed, then set `data
 | `--color-status-idle` | gray | Not yet |
 | `--color-status-draft` | purple | Drafting / not yet |
 | `--color-status-ok` | green | Valid / pass |
-| `--color-status-bad` | red | Error |
+| `--color-status-bad` | muted coral | Failed / error |
 | `--color-status-progress` | purple | In progress (later) |
 
 Space: `--space-1` … `--space-6` (4px grid). Radius: 8px controls, 12px panels, pill 9999px.
@@ -50,9 +50,12 @@ Space: `--space-1` … `--space-6` (4px grid). Radius: 8px controls, 12px panels
 | `.app-shell` | Single-column canvas |
 | `.pipeline` / `.pipeline-graph` / `.pipeline-svg` / `.pipeline-node` / `.pipeline-branch` | Flush circle-and-rail graph. SVG draws one rail and the Define bracket. Labels sit above dots. Node `data-tone` is idle / draft / ok / bad / progress |
 | `.stage-workspace` / `.stage-nav` / `.nav-mark` / `.nav-badge` / `.nav-chevron` / `.stage-view` | Status tree + content. Define starts open; chevron collapses Spec / Judgment. Selected row uses `--surface-hover`, no purple inset |
-| `.topbar` / `.logo-horiz` / `.btn-primary` / `.btn-secondary` / `.cta` | Header: horizontal wordmark, pack copy, primary action. CTAs use an icon + label. Action hints sit on hover (`data-hint`), not beside the button |
-| `.pill-btn` | Stage CTAs (Check, Implement, Prove). Same `.cta` treatment as the header |
-| `.panel` | `--surface-2` card |
+| `.topbar` / `.logo-horiz` / `.home-btn` / `.btn-primary` / `.btn-secondary` / `.cta` | Header: wordmark is home, pack copy, primary action. CTAs use an icon + label. Action hints sit on hover (`data-hint`), not beside the button |
+| `.pack-home` / `.pack-list` / `.pack-row` / `.pack-meter` | Requirement list home. Row meters use `data-tone` idle / draft / ok / bad / progress |
+| `.context-menu` / `.context-menu-item` / `.context-menu-danger` | Right-click menu on a list row. Delete is the only item |
+| `.confirm-dialog` | Modal confirm chrome. Ignore (Yes/No/Cancel) and Delete (Cancel + danger Confirm) |
+| `.pill-btn` | Stage CTAs (Check, Implement, Prove, Stop). Same `.cta` treatment as the header. Stop is a secondary pill. `.cta-danger` is Reject and Delete in a confirm dialog |
+| `.stack-gate` / `.stack-choice` | First-run setup: coding choice (manual / Cursor / Copilot) then stack when the repo is empty |
 | `.list-row` | Spec sections, findings, activity |
 | `.status-bar` / `.status-bar-mark` / `.status-bar-meta` | Stage content header: pill bar with tone, title, and icon meta. `data-tone` is idle / draft / ok / bad / progress |
 | `.spec-section` | Section checklist rows (present / missing / error) |

@@ -5,11 +5,12 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
+import { parseAdapterId } from "./adapter.js";
 import { isRequirementId } from "./compile.js";
 import { adapterInstructions, ImplementDisabledError, ImplementLockedError } from "./implement.js";
 import { FixFromProofLockedError } from "./fix-from-proof.js";
 import { StackRequiredError, UnknownStackError } from "./stack.js";
-import { checkPack, compilePack, createPack, findRequirementsDir, finishImplement, implementPack, provePack, resolvePack } from "./pack.js";
+import { checkPack, compilePack, createPack, findRequirementsDir, finishImplement, implementPack, provePack, resolveCockpitPack, resolvePack } from "./pack.js";
 import { ProveLockedError } from "./proof.js";
 import { createAppState, createCockpitServer, refresh } from "./server.js";
 
@@ -83,25 +84,27 @@ async function main(command: string, rest: string[]): Promise<void> {
     if (!pack) {
       throw new Error("No requirement pack here. Open a docs/requirements/<id> folder, or create one.");
     }
-    const adapter = rest.includes("--adapter=manual") || rest[0] === "manual" ? "manual" : "cursor";
+    const adapter = adapterFromArgs(rest);
     const stack = flagValue(rest, "stack");
     const fromProof = rest.includes("--from-proof");
     try {
       const launched = await implementPack(pack, {
-        ...(stack ? { adapter, stack } : { adapter }),
+        ...(adapter ? { adapter } : {}),
+        ...(stack ? { stack } : {}),
         ...(fromProof ? { fromProof: true } : {}),
         onLogLine: (line) => console.log(line),
       });
       let result = launched.result;
       let message = launched.message;
+      const used = adapter ?? result.health.build.adapter ?? "cursor";
       if (launched.launch?.finished) {
         console.log(`Build running — ${message}`);
-        const done = await finishImplement(pack, launched.launch, adapter);
+        const done = await finishImplement(pack, launched.launch, used);
         result = done.result;
         message = done.message;
       }
       console.log(`Build ${result.health.build.state} — ${message}`);
-      console.log(adapterInstructions(adapter, fromProof ? pack.fixFromProofBrief : pack.implementBrief));
+      console.log(adapterInstructions(used, fromProof ? pack.fixFromProofBrief : pack.implementBrief));
       if (result.health.build.state === "failed") process.exit(2);
     } catch (err) {
       if (
@@ -174,7 +177,7 @@ async function main(command: string, rest: string[]): Promise<void> {
 }
 
 async function startCockpit(cwd: string): Promise<void> {
-  const pack = await resolvePack(cwd);
+  const pack = await resolveCockpitPack(cwd);
   const state = createAppState(cwd, pack);
   await refresh(state);
 
@@ -184,32 +187,38 @@ async function startCockpit(cwd: string): Promise<void> {
     const url = `http://127.0.0.1:${port}`;
     console.log(`Req0 cockpit: ${url}`);
     if (state.pack) console.log(`Pack: ${state.pack.root}`);
-    else console.log("No pack selected yet. Create one from the cockpit.");
+    else console.log("Requirement list. Open a pack or create one from the cockpit.");
     openBrowser(url);
   });
 
-  if (state.pack) {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const schedule = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        void refresh(state).catch((err) => {
-          console.error(err instanceof Error ? err.message : err);
-        });
-      }, 80);
-    };
-    const watchTargets = [state.pack.requirement, path.dirname(state.pack.personas)];
-    for (const watchPath of watchTargets) {
-      try {
-        const watcher = watch(watchPath, () => schedule());
-        watcher.on("error", (err) => {
-          console.error(`File watch unavailable (${err.message}). Save from the cockpit still compiles.`);
-        });
-      } catch (err) {
-        console.error(
-          `File watch unavailable (${err instanceof Error ? err.message : err}). Save from the cockpit still compiles.`,
-        );
-      }
+  const requirementsDir = await findRequirementsDir(cwd);
+  const watchTargets = requirementsDir
+    ? [requirementsDir]
+    : state.pack
+      ? [state.pack.requirement, path.dirname(state.pack.personas)]
+      : [];
+  if (watchTargets.length === 0) return;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const schedule = () => {
+    if (!state.pack) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      void refresh(state).catch((err) => {
+        console.error(err instanceof Error ? err.message : err);
+      });
+    }, 80);
+  };
+  for (const watchPath of watchTargets) {
+    try {
+      const watcher = watch(watchPath, { recursive: Boolean(requirementsDir) }, () => schedule());
+      watcher.on("error", (err) => {
+        console.error(`File watch unavailable (${err.message}). Save from the cockpit still compiles.`);
+      });
+    } catch (err) {
+      console.error(
+        `File watch unavailable (${err instanceof Error ? err.message : err}). Save from the cockpit still compiles.`,
+      );
     }
   }
 }
@@ -227,6 +236,17 @@ function flagValue(args: string[], name: string): string | undefined {
   const hit = args.find((arg) => arg.startsWith(prefix));
   if (!hit) return undefined;
   return hit.slice(prefix.length);
+}
+
+function adapterFromArgs(args: string[]): ReturnType<typeof parseAdapterId> {
+  const flagged = flagValue(args, "adapter");
+  if (flagged !== undefined) {
+    const id = parseAdapterId(flagged);
+    if (!id) throw new Error(`Unknown adapter "${flagged}". Use cursor, copilot, or manual.`);
+    return id;
+  }
+  if (args[0] === "manual" || args[0] === "cursor" || args[0] === "copilot") return args[0];
+  return null;
 }
 
 function isFree(port: number): Promise<boolean> {

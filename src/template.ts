@@ -1,3 +1,15 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+export const STARTER_TEMPLATE_PATH = path.join(PACKAGE_ROOT, "docs/requirement-template.md");
+
+export async function loadStarterRequirement(): Promise<string> {
+  return readFile(STARTER_TEMPLATE_PATH, "utf8");
+}
+
 export const EMPTY_TEMPLATE = `# Untitled requirement
 
 ## Overview

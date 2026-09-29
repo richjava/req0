@@ -4,11 +4,14 @@ The Requirement Owner’s home. Launch with `npm start` or `req0 start` from the
 
 **One home, one scoreboard, one primary next action plus staged buttons on the selected stage.** Not a second IDE, not a cloud app. Spec and Ready stay separate checks: valid grammar is not ready to implement.
 
+From the **product repo**, the cockpit opens on a **requirement list**: each row is an id, title, and the four meters. Click a row to enter that pack’s cockpit. Create a pack from the list. The logo and **All requirements** return to the list. Starting inside a pack folder opens that pack directly. This is a picker, not a portfolio: no merged pipelines.
+
 ## Layout (design system)
 
 ClickUp-inspired product chrome — see [design-system.md](design-system.md).
 
-- **Topbar** — pack name, how-this-is-going, primary next action (icon + label). The action hint is on hover, not beside the button.
+- **Topbar** — pack name, how-this-is-going, primary next action (icon + label). The action hint is on hover, not beside the button. Favicons and `site.webmanifest` live with the other cockpit static files. The wordmark and **All requirements** go back to the list. The header CTA is hidden on the list.
+- **Requirement list** — home when no pack is selected. Rows show Spec, Judgment, Implement (when owned), and QA meters. Create-pack lives here. Right-click a row for **Delete**; confirm, then the pack folder is removed.
 - **Pipeline graph** — Start → Define → Implement → QA → End as labeled circles on a thin rail. Spec and Judgment hang under Define. Implement is omitted when `req0.json` sets `"implement": false`. Dots use existing status tokens (idle / draft / ok / bad / progress), not Jenkins green.
 - **Stage workspace** — nested nav on the left (Define ▾ Spec, Judgment; Implement; QA) and content on the right. Define’s children start expanded. The chevron collapses Spec and Judgment; the Define row still opens the editor.
 
@@ -17,10 +20,10 @@ ClickUp-inspired product chrome — see [design-system.md](design-system.md).
 | **Define** | `requirement.md` editor only (Preview / Edit / Split). Improve patch review stays here. |
 | **Spec** | Status bar (Valid / Drafting / Empty), required/optional `##` sections, purpose, present/missing/error, compile findings |
 | **Judgment** | Status bar (Clear + noul / Blocked / Not yet), Check / Improve it, Ready findings. Clicking a finding opens Define and jumps in the editor. |
-| **Implement** | Status bar, stage CTAs, then Activity. Stop / Ignore / Rebuild. No editor. |
+| **Implement** | Status bar, stage CTAs, then Activity. Stop / Ignore / Reimplement. Stop uses the same secondary pill as Ignore, not status-bad red. No editor. |
 | **QA** | Same chrome: status bar, stage CTAs, Report (`derived/proof-report.md`), then Activity. Prove / Re-prove / Fix from proof. No editor. |
 
-Create-pack stays a Start gate. If the product repo is empty and `req0.json` has no stack, the cockpit asks for **Next.js default** or **Amplify Gen 2** before the graph and editor load. That records `req0.json` (same as `req0 implement --stack=`).
+Create-pack stays a Start gate. If the product repo has no coding choice yet, the cockpit asks whether the owner will write the code (Implement off) or use **Cursor** or **Copilot**. Empty repos still need **Next.js default** or **Amplify Gen 2** when an agent will implement. That records `req0.json` (same as `--adapter=` and `--stack=`).
 
 Display names are **Define / Implement / QA** and Judgment status **Clear**. File keys in `health.json` stay `spec` / `ready` / `build` / `proof`.
 
@@ -47,12 +50,12 @@ Start → Define → Implement → QA → End. Click a graph node to select that
 | --- | --- | --- | --- |
 | Spec | Empty / Drafting / Valid | none | compile is on save |
 | Judgment | Not yet / Blocked / Clear + noul | **Check** if no current Jev; **Improve it** if Ready is blocked, pack noul is below 0.75, or a persona is missing; hidden after Ready | Spec Valid; Check needs an API key (fail-closed) |
-| Implement | Not yet / Implementing / Succeeded / Failed / Stale. The node is omitted when `req0.json` has `"implement": false` | **Implement** if never succeeded; **Rebuild** if succeeded or stale; **Ignore** if failed; **Stop** while Implementing | Ready is Ready (`ready.state === "ready"`), and a stack is recorded when the product repo is empty. Stays **Implementing** until the Cursor agent exits, the owner **Stop**s, 3 `ampx sandbox --once` deploys, or 20 minutes. **Ignore** asks whether implementation succeeded: Yes marks Build successful, No leaves it failed, and both unlock Prove |
+| Implement | Not yet / Implementing / Succeeded / Failed / Stale. The node is omitted when `req0.json` has `"implement": false` | **Implement** if never succeeded; **Reimplement** if succeeded or stale; **Ignore** if failed; **Stop** while Implementing | Ready is Ready (`ready.state === "ready"`), and a stack is recorded when the product repo is empty. Stays **Implementing** until the Cursor agent exits, the owner **Stop**s, 3 `ampx sandbox --once` deploys, or 20 minutes. **Ignore** asks whether implementation succeeded: Yes marks Build successful, No leaves it failed, and both unlock Prove |
 | QA | Not yet until a run for this spec (and this build, when Implement is owned); else Passed / Failed / Needs review / Stale | **Prove** first time; **Re-prove** if a run exists or is stale | Ready, `runtime.yaml` parses, and either Build succeeded, implement is off, or the owner Ignored a failed Build |
 
 Start lights when a pack exists (Create lives here if empty). End lights when QA passed.
 
-Proof is stale if the spec hash changed, or — when Implement is owned — the latest succeeded build `at` differs from `proof-run.buildAt`. Same spec + new Rebuild ⇒ Re-prove. When implement is off, stale is spec-only. Each Prove also writes `derived/proof-report.md` — a human-readable case report for QA. `status.md` stays the scoreboard.
+Proof is stale if the spec hash changed, or — when Implement is owned — the latest succeeded build `at` differs from `proof-run.buildAt`. Same spec + new Reimplement ⇒ Re-prove. When implement is off, stale is spec-only. Each Prove also writes `derived/proof-report.md` — a human-readable case report for QA. `status.md` stays the scoreboard.
 
 ## Improve it vs Check vs Proof findings
 
@@ -66,13 +69,13 @@ The cockpit **polls** `GET /api/state`. It must never open EventSource or any ot
 
 ## Interaction contract
 
-1. Open the cockpit. If the product repo is empty and no stack is recorded, choose a stack first. Then graph + Define editor (or Create on Start).
+1. Open the cockpit. If the product repo is empty and no stack is recorded, choose a stack first. From the product repo, pick a requirement from the list (or create one). From a pack folder, the graph + Define editor open for that pack.
 2. Primary next action stays in the topbar.
 3. Drill Spec / Judgment for structure vs Jev; Implement / QA for runs and the proof report.
 4. Confirm that action, or edit the spec on Define.
 5. Compiler (or later Jev / agent / browser) updates health. The next action changes. The RO does not memorize CLI flags.
 
-After Spec Valid, Judgment’s button is **Check**. Without `TYPESAFE_API_KEY` the click fails closed: Ready stays **Not yet**, and TypeSafe errors surface as a 502 with the server message (no secrets). A matrix role without a persona is a Ready blocker immediately; **Improve it** can add that persona without Jev. After a passing Jev run, primary becomes **Implement** — unless `req0.json` sets `"implement": false`, in which case primary is **Prove**. On an empty product repo with no stack, the cockpit does not open the graph until the owner picks **Next.js default** or **Amplify Gen 2** (same as writing `req0.json` or `req0 implement --stack=`). While the Cursor agent runs, Implement stays **Implementing**, primary is **Stop**, and Activity on Implement (and QA) shows tools and messages from the agent stream. The run also stops after 3 `ampx sandbox --once` deploys or 20 minutes. After the agent exits, Activity records that it finished. After Build succeeded, when implement is off, or after **Ignore** on a failed Build, primary is **Prove**. It stays disabled until `fixtures/runtime.yaml` parses; then it runs compiled `derived/qa-plan.yaml` in a browser. After Proof **failed** or **needs review**, primary is **Fix from proof** (Implement’s button stays **Rebuild**). That agent reads `derived/proof-report.md` plus the implement brief and must not edit `requirement.md`. **Improve it** stays Ready-only.
+After Spec Valid, Judgment’s button is **Check**. Without `TYPESAFE_API_KEY` the click fails closed: Ready stays **Not yet**, and TypeSafe errors surface as a 502 with the server message (no secrets). A matrix role without a persona is a Ready blocker immediately; **Improve it** can add that persona without Jev. After a passing Jev run, primary becomes **Implement** — unless `req0.json` sets `"implement": false`, in which case primary is **Prove**. On an empty product repo with no stack, the cockpit does not open the graph until the owner picks **Next.js default** or **Amplify Gen 2** (same as writing `req0.json` or `req0 implement --stack=`). While the Cursor agent runs, Implement stays **Implementing**, primary is **Stop**, and Activity on Implement (and QA) shows tools and messages from the agent stream. The run also stops after 3 `ampx sandbox --once` deploys or 20 minutes. After the agent exits, Activity records that it finished. After Build succeeded, when implement is off, or after **Ignore** on a failed Build, primary is **Prove**. It stays disabled until `fixtures/runtime.yaml` parses; then it runs compiled `derived/qa-plan.yaml` in a browser. After Proof **failed** or **needs review**, primary is **Fix from proof** (Implement’s button stays **Reimplement**). That agent reads `derived/proof-report.md` plus the implement brief and must not edit `requirement.md`. **Improve it** stays Ready-only.
 
 ## Editing
 
@@ -80,4 +83,4 @@ The RO may edit in the cockpit or in the IDE. The editor lives only on **Define*
 
 ## Create
 
-Empty pack folder: next action **Create this requirement** writes the template. From repo root with no pack: create bar asks for a kebab-case id.
+Empty pack folder: next action **Create this requirement** writes [requirement-template.md](requirement-template.md). From the requirement list: create bar asks for a kebab-case id, writes the same template, then opens the new pack.

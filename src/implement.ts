@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { adapterDisplayName } from "./adapter.js";
 import type { AdapterId, CompileResult } from "./types.js";
 
 export const IMPLEMENT_AGENT_LOG = "implement-agent.log";
@@ -9,8 +10,8 @@ export const IMPLEMENT_SANDBOX_MAX = 3;
 /** Wall-clock cap so a debug loop cannot run indefinitely. */
 export const IMPLEMENT_MAX_MS = 20 * 60 * 1000;
 export const IMPLEMENT_STOPPED = "Owner stopped Implement.";
-export const IMPLEMENT_SANDBOX_CAP = `Stopped after ${IMPLEMENT_SANDBOX_MAX} sandbox deploys. Rebuild or Ignore, then Prove.`;
-export const IMPLEMENT_TIME_CAP = `Stopped after ${IMPLEMENT_MAX_MS / 60_000} minutes. Rebuild or Ignore, then Prove.`;
+export const IMPLEMENT_SANDBOX_CAP = `Stopped after ${IMPLEMENT_SANDBOX_MAX} sandbox deploys. Reimplement or Ignore, then Prove.`;
+export const IMPLEMENT_TIME_CAP = `Stopped after ${IMPLEMENT_MAX_MS / 60_000} minutes. Reimplement or Ignore, then Prove.`;
 
 export type ImplementStop = { reason?: string };
 
@@ -37,6 +38,7 @@ export class ImplementDisabledError extends Error {
 export type LaunchAdapterDeps = {
   spawn?: typeof spawn;
   resolveBin?: () => string | null;
+  resolveCopilotBin?: () => string | null;
   agentStatus?: (bin: string) => string;
   settleMs?: number;
   platform?: NodeJS.Platform;
@@ -47,6 +49,8 @@ export type LaunchAdapterDeps = {
   onLogLine?: (line: string) => void;
   sandboxMax?: number;
   maxMs?: number;
+  heartbeatLabel?: string;
+  cliName?: string;
 };
 
 export type LaunchAdapterResult = {
@@ -61,6 +65,9 @@ export type LaunchAdapterResult = {
 export function adapterInstructions(adapter: AdapterId, briefPath: string): string {
   if (adapter === "cursor") {
     return `Cursor adapter: agent starts in the product repo with ${briefPath} in the prompt. Do not invent spec IDs.`;
+  }
+  if (adapter === "copilot") {
+    return `Copilot adapter: GitHub Copilot CLI starts in the product repo with ${briefPath} in the prompt. Do not invent spec IDs.`;
   }
   return `Manual adapter: open ${briefPath} in any coding agent and implement from that brief. This path does not start an agent.`;
 }
@@ -123,6 +130,18 @@ export function resolveCursorBin(): string | null {
   return null;
 }
 
+export function resolveCopilotBin(): string | null {
+  const override = process.env.COPILOT_BIN?.trim();
+  if (override && existsSync(override)) return override;
+  const exe = process.platform === "win32" ? "copilot.cmd" : "copilot";
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, exe);
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
 export function cursorAgentStatus(bin: string): string {
   const result = spawnSync(bin, ["agent", "status"], { encoding: "utf8", timeout: 4_000 });
   return `${result.stdout ?? ""}${result.stderr ?? ""}`;
@@ -155,8 +174,11 @@ export function launchAdapter(
   if (!repoRoot) {
     return Promise.resolve({
       ok: false,
-      message: "No product repo root, so Cursor cannot be launched. Use the manual adapter.",
+      message: `${adapterDisplayName(adapter)} cannot be launched without a product repo root. Use --adapter=manual.`,
     });
+  }
+  if (adapter === "copilot") {
+    return spawnCopilotAgent(repoRoot, briefPath, deps);
   }
   const bin = (deps.resolveBin ?? resolveCursorBin)();
   if (!bin) {
@@ -203,7 +225,7 @@ async function spawnCursorAgent(
     return { ok: false, message: agentLaunch.message, logPath, stop: agentLaunch.stop };
   }
 
-  const settled = await waitForAgent(agentLaunch.child, deps.settleMs ?? 1500, logPath, bin);
+  const settled = await waitForAgent(agentLaunch.child, deps.settleMs ?? 1500, logPath, bin, "Cursor");
   if (!settled.ok) {
     return {
       ...settled,
@@ -219,6 +241,54 @@ async function spawnCursorAgent(
     message:
       deps.successMessage ??
       "Started a Cursor agent with the implement brief. Activity shows tools and messages as they happen. Build stays running until the agent exits.",
+    child: agentLaunch.child,
+    logPath,
+    finished: agentLaunch.finished,
+    stop: agentLaunch.stop,
+  };
+}
+
+async function spawnCopilotAgent(
+  repoRoot: string,
+  briefPath: string,
+  deps: LaunchAdapterDeps,
+): Promise<LaunchAdapterResult> {
+  const bin = (deps.resolveCopilotBin ?? resolveCopilotBin)();
+  if (!bin) {
+    return {
+      ok: false,
+      message:
+        "GitHub Copilot CLI was not found. Install it, set COPILOT_BIN, or retry with --adapter=cursor or --adapter=manual.",
+    };
+  }
+  const run = deps.spawn ?? spawn;
+  const logPath = implementLogPath(briefPath, deps.logFile);
+  const agentLaunch = await launchLogged(
+    run,
+    bin,
+    copilotArgs(briefPath, deps),
+    repoRoot,
+    logPath,
+    { ...deps, heartbeatLabel: deps.heartbeatLabel ?? "Copilot agent still running.", cliName: "Copilot" },
+  );
+  if (!agentLaunch.ok) {
+    return { ok: false, message: agentLaunch.message, logPath, stop: agentLaunch.stop };
+  }
+  const settled = await waitForAgent(agentLaunch.child, deps.settleMs ?? 1500, logPath, bin, "Copilot");
+  if (!settled.ok) {
+    return {
+      ...settled,
+      logPath,
+      child: agentLaunch.child,
+      finished: agentLaunch.finished,
+      stop: agentLaunch.stop,
+    };
+  }
+  return {
+    ok: true,
+    message:
+      deps.successMessage ??
+      "Started GitHub Copilot CLI with the implement brief. Activity shows tools and messages as they happen. Build stays running until the agent exits.",
     child: agentLaunch.child,
     logPath,
     finished: agentLaunch.finished,
@@ -242,6 +312,11 @@ function agentArgs(repoRoot: string, briefPath: string, deps: LaunchAdapterDeps)
   const key = process.env.CURSOR_API_KEY?.trim();
   if (key) args.splice(1, 0, "--api-key", key);
   return args;
+}
+
+function copilotArgs(briefPath: string, deps: LaunchAdapterDeps): string[] {
+  const prompt = deps.prompt ?? implementPrompt(briefPath);
+  return ["-p", prompt, "--no-ask-user", "--allow-all", "--output-format", "json"];
 }
 
 function launchDetached(
@@ -298,7 +373,7 @@ function launchLogged(
     } catch (err) {
       resolve({
         ok: false,
-        message: err instanceof Error ? err.message : "Cursor launch failed.",
+        message: err instanceof Error ? err.message : `${deps.cliName ?? "Cursor"} launch failed.`,
       });
       return;
     }
@@ -307,12 +382,13 @@ function launchLogged(
       stop,
       sandboxMax: deps.sandboxMax ?? IMPLEMENT_SANDBOX_MAX,
       maxMs: deps.maxMs ?? IMPLEMENT_MAX_MS,
+      heartbeatLabel: deps.heartbeatLabel ?? `${deps.cliName ?? "Cursor"} agent still running.`,
     });
     child.once("error", (err) => {
       resolve({
         ok: false,
         message: err.message.includes("ENOENT")
-          ? "Cursor CLI was not found. Install it, set CURSOR_BIN, or retry with --adapter=manual."
+          ? `${deps.cliName ?? "Cursor"} CLI was not found. Install it, or retry with --adapter=manual.`
           : err.message,
         finished,
         stop,
@@ -328,12 +404,13 @@ export function attachAgentLog(
   child: ChildProcess,
   logPath: string,
   onLogLine?: (line: string) => void,
-  control: { stop?: ImplementStop; sandboxMax?: number; maxMs?: number } = {},
+  control: { stop?: ImplementStop; sandboxMax?: number; maxMs?: number; heartbeatLabel?: string } = {},
 ): Promise<{ code: number | null }> {
   const stream = createWriteStream(logPath, { flags: "w" });
   const stop = control.stop ?? {};
   const sandboxMax = control.sandboxMax ?? IMPLEMENT_SANDBOX_MAX;
   const maxMs = control.maxMs ?? IMPLEMENT_MAX_MS;
+  const heartbeatLabel = control.heartbeatLabel ?? "Agent still running.";
   let lastEmit = Date.now();
   let lastShown = "";
   let sandboxStarts = 0;
@@ -360,7 +437,7 @@ export function attachAgentLog(
     ? setInterval(() => {
         if (Date.now() - lastEmit < 20_000) return;
         lastEmit = Date.now();
-        lastShown = "Cursor agent still running.";
+        lastShown = heartbeatLabel;
         onLogLine(lastShown);
       }, 5_000)
     : undefined;
@@ -432,7 +509,8 @@ export function isSandboxOnceStart(line: string): boolean {
   if (!text.startsWith("{")) return /ampx sandbox --once/.test(text);
   try {
     const event = JSON.parse(text) as Record<string, unknown>;
-    if (event.type !== "tool_call" || event.subtype !== "started") return false;
+    if (event.type === "tool_call" && event.subtype !== "started") return false;
+    if (event.type === "tool.execution_complete" || event.type === "tool_result") return false;
     return text.includes("ampx sandbox") && text.includes("--once");
   } catch {
     return false;
@@ -449,6 +527,8 @@ export function summarizeAgentLine(line: string): string | null {
   } catch {
     return text.slice(0, 280);
   }
+  const copilot = summarizeCopilotLine(event);
+  if (copilot !== undefined) return copilot;
   if (event.type === "system" && event.subtype === "init") {
     const model = typeof event.model === "string" && event.model.trim() ? event.model.trim() : "Cursor";
     return `Cursor agent connected (${model}).`;
@@ -470,6 +550,51 @@ export function summarizeAgentLine(line: string): string | null {
       : `Cursor agent finished in ${formatDuration(ms)}.`;
   }
   return null;
+}
+
+function summarizeCopilotLine(event: Record<string, unknown>): string | null | undefined {
+  const type = typeof event.type === "string" ? event.type : "";
+  const isCopilot =
+    type.includes(".") || type === "tool_use" || type === "tool_result" || type === "message";
+  if (!isCopilot) return undefined;
+  const data =
+    event.data && typeof event.data === "object" ? (event.data as Record<string, unknown>) : event;
+  if (type === "user.message") return null;
+  if (type === "tool.execution_complete" || type === "tool_result") return null;
+  if (type === "tool.execution_start" || type === "tool_use") {
+    const name = String(data.toolName ?? data.name ?? event.name ?? "a tool");
+    const args = (data.arguments ?? data.input ?? event.input) as Record<string, unknown> | undefined;
+    return summarizeCopilotTool(name, args);
+  }
+  if (type === "assistant.message" || type === "assistant" || type === "message") {
+    const requests = data.toolRequests;
+    if (Array.isArray(requests) && requests[0] && typeof requests[0] === "object") {
+      const req = requests[0] as { name?: string; arguments?: Record<string, unknown> };
+      return summarizeCopilotTool(String(req.name ?? "a tool"), req.arguments);
+    }
+    const content = data.content ?? event.content;
+    const body = typeof content === "string" ? content.trim() : "";
+    return body ? clip(`Agent: ${body}`, 280) : null;
+  }
+  if (type === "session.error") {
+    const message = data.message ?? data.error ?? event.message;
+    return clip(`Copilot error: ${String(message ?? "unknown")}`, 280);
+  }
+  return null;
+}
+
+function summarizeCopilotTool(name: string, args?: Record<string, unknown>): string {
+  const kind = name.toLowerCase();
+  const file = toolArg(args, "path") !== "…" ? toolArg(args, "path") : toolArg(args, "file_path");
+  const command = toolArg(args, "command") !== "…" ? toolArg(args, "command") : toolArg(args, "cmd");
+  if (kind.includes("bash") || kind.includes("shell") || command !== "…") return clip(`Running ${command}`, 280);
+  if (kind.includes("edit") || kind.includes("write") || kind.includes("create")) return clip(`Writing ${file}`, 280);
+  if (kind.includes("read")) return clip(`Reading ${file}`, 280);
+  if (kind.includes("grep") || kind.includes("search")) {
+    const pattern = toolArg(args, "pattern") !== "…" ? toolArg(args, "pattern") : toolArg(args, "query");
+    return clip(`Searching ${pattern}`, 280);
+  }
+  return clip(`Using ${name}`, 280);
 }
 
 function assistantText(event: Record<string, unknown>): string {
@@ -533,9 +658,12 @@ function makeLineFeeder(onLine: (line: string) => void): (chunk: Buffer | string
 }
 
 function redactSecrets(line: string): string {
-  const key = process.env.CURSOR_API_KEY?.trim();
-  if (key && line.includes(key)) return line.split(key).join("…");
-  return line;
+  let out = line;
+  for (const name of ["CURSOR_API_KEY", "COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"] as const) {
+    const key = process.env[name]?.trim();
+    if (key && out.includes(key)) out = out.split(key).join("…");
+  }
+  return out;
 }
 
 async function waitForAgent(
@@ -543,6 +671,7 @@ async function waitForAgent(
   settleMs: number,
   logPath: string,
   bin: string,
+  agentName = "Cursor",
 ): Promise<{ ok: boolean; message: string }> {
   if (settleMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, settleMs));
@@ -551,11 +680,15 @@ async function waitForAgent(
     return { ok: true, message: "started" };
   }
   const tail = tailLog(logPath);
+  const loginHint =
+    agentName === "Copilot"
+      ? `If you are not logged in, run: "${bin}" /login`
+      : `If you are not logged in, run: "${bin}" agent login`;
   return {
     ok: false,
     message: tail
-      ? `Cursor agent exited immediately (${child.exitCode}). ${tail}`
-      : `Cursor agent exited immediately (${child.exitCode}). If you are not logged in, run: "${bin}" agent login`,
+      ? `${agentName} agent exited immediately (${child.exitCode}). ${tail}`
+      : `${agentName} agent exited immediately (${child.exitCode}). ${loginHint}`,
   };
 }
 

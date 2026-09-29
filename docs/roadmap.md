@@ -38,11 +38,11 @@ No API key (`TYPESAFE_API_KEY`) → Ready stays **Not yet**. Persona blockers st
 
 ## Milestone 3 — A coding agent builds from the pack
 
-Portable `implement-brief.md`. Adapters: **Cursor launch** and **generic manual** only. Empty repo = no customer app at repo root (Req0’s own `package.json` does not count). Stack recorded in `req0.json` when Implement actually runs. Build Succeeded ≠ app boots.
+Portable `implement-brief.md`. Adapters: **Cursor launch**, **Copilot CLI launch**, and **generic manual**. Empty repo = no customer app at repo root (Req0’s own `package.json` does not count). Stack and adapter recorded in `req0.json`. Build Succeeded ≠ app boots.
 
-Implement stays **locked until Ready is Ready**. When Ready, `req0 implement` and the cockpit **Implement** button start a Cursor agent in the product repo, with `derived/implement-brief.md` in the prompt. `--adapter=manual` only records the run. Empty repo with no recorded stack refuses Implement until `req0.json`, `--stack=`, or the cockpit records one. `"implement": false` in `req0.json` turns the stage off: no build stamp, Implement hidden, Prove uses Ready + runtime. Build Succeeded is not proof the app boots.
+Implement stays **locked until Ready is Ready**. When Ready, `req0 implement` and the cockpit **Implement** button start the recorded agent (Cursor or Copilot CLI) in the product repo, with `derived/implement-brief.md` in the prompt. `--adapter=manual` only records the run. Empty repo with no recorded stack refuses Implement until `req0.json`, `--stack=`, or the cockpit records one. `"implement": false` in `req0.json` turns the stage off: no build stamp, Implement hidden, Prove uses Ready + runtime. Build Succeeded is not proof the app boots.
 
-**Shipped:** emit `derived/implement-brief.md` on a valid compile, empty-vs-existing product-repo detection, Cursor agent launch + manual skip, `derived/build-run.json`, Implement enabled only after Ready.
+**Shipped:** emit `derived/implement-brief.md` on a valid compile, empty-vs-existing product-repo detection, Cursor + Copilot CLI launch + manual skip, `derived/build-run.json`, Implement enabled only after Ready.
 
 ## Milestone 4 — Proof
 
@@ -85,7 +85,7 @@ A valid spec always writes `derived/qa-plan.yaml` from `spec.json` only — one 
 
 - **M5:** RO types screenshot captions; PNG/JPG/WebP; link one spec ID. No vision model.
 - **M6:** AST-id stale + re-prove those cells. Append-only proof history.
-- **M7:** Repo-root pack list, optional `depends_on`, `req0 qa --ci`, GitHub Action example — not a GitHub App.
+- **M7:** Optional `depends_on`, `req0 qa --ci`, GitHub Action example — not a GitHub App. The repo-root pack list (picker, not a portfolio) is in the cockpit.
 
 ## Cancelled, not deferred
 
@@ -99,7 +99,7 @@ After each milestone: what shipped vs acceptance, any drift, any fence that shou
 
 ### Milestone 3
 
-Shipped vs acceptance: implement brief, Ready gate, Cursor + manual adapters, `build-run.json`, `req0.json` stack. Fence held: Build Succeeded is not proof the app boots.
+Shipped vs acceptance: implement brief, Ready gate, Cursor + Copilot + manual adapters, `build-run.json`, `req0.json` stack and adapter. Fence held: Build Succeeded is not proof the app boots.
 
 Drift (fixed here): architecture still listed Jev and coding agents as unbuilt. Roadmap M2 still said invoice-approval is honestly blocked; a live product pack can be Ready with nits. The golden pack in this repo stays Not yet without `TYPESAFE_API_KEY` — that is a key, not a spec failure. Health files are not copied between Req0 and the product repo.
 
@@ -107,4 +107,4 @@ Drift (fixed here): architecture still listed Jev and coding agents as unbuilt. 
 
 Shipped vs acceptance: runtime gate, compiled qa-plan, deterministic deny, Jev noul on allow, Proof meter, cockpit/CLI Prove. Fence held: no screenshot vision (M5), no per-cell stale re-prove (M6), no second customer app, no `jev-browser` package.
 
-Cockpit fence update: the one-next-action rule is now **one primary + staged pill buttons** (Check / Improve it, Implement / Rebuild, Prove / Re-prove). Spec and Ready stay separate. Improve it is one opinionated writer pass for all open Ready findings (including pack-gate) when blocked or pack noul is below 0.75; Jev still only judges.
+Cockpit fence update: the one-next-action rule is now **one primary + staged pill buttons** (Check / Improve it, Implement / Reimplement, Prove / Re-prove). Spec and Ready stay separate. Improve it is one opinionated writer pass for all open Ready findings (including pack-gate) when blocked or pack noul is below 0.75; Jev still only judges.
