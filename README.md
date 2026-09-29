@@ -1,3 +1,9 @@
+<div align="center">
+
+<img src="docs/brand/req0-logo-horiz.png" alt="Req0" width="100%" />
+
+</div>
+
 # Req0
 
 Req0 is a **requirement operating system** for a product git repo. You write a structured requirement pack. The same pack drives definition, implementation, and proof — not a parallel ticket or test script.
