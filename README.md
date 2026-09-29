@@ -2,7 +2,7 @@
 
 Req0 is a **requirement operating system** for a product git repo. You write a structured requirement pack. The same pack drives definition, implementation, and proof — not a parallel ticket or test script.
 
-A local **cockpit** shows health and the next action. A deterministic compiler checks the grammar. Optional layers judge the spec (Jev), launch a coding agent (Cursor or Copilot), and prove the app in a browser.
+A local **cockpit** shows health and the next action. A deterministic compiler checks the grammar. **Jev** (TypeSafe System One) judges whether the spec is ready to implement. Coding agents (Cursor or Copilot) implement; the browser proves the app.
 
 Req0 is a CLI plus a thin HTML cockpit. It is not a hosted SaaS.
 
@@ -19,6 +19,8 @@ Or run without a global install:
 ```bash
 npx req0 start
 ```
+
+You can open the cockpit and compile a spec with that alone. **Judgment, Implement, and Prove need Jev:** set `TYPESAFE_API_KEY` in the product repo’s `.env` (TypeSafe System One). Without the key, Check fails closed and Ready stays Not yet.
 
 ## Quick start
 
