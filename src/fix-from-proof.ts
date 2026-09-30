@@ -1,3 +1,4 @@
+import { questionsBriefSection } from "./agent-questions.js";
 import type { Health, ProofMeter, ReadyMeter, SpecAst } from "./types.js";
 
 export class FixFromProofLockedError extends Error {
@@ -67,6 +68,8 @@ export function emitFixFromProofBrief(input: {
     }
     lines.push("");
   }
+
+  lines.push(questionsBriefSection().trimEnd(), "");
 
   lines.push(
     "## Done means",

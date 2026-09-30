@@ -3,7 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasJevAccess, JevRequestError, JevUnavailableError } from "./jev.js";
-import { implementPack, finishImplement, ignoreBuild, launchImprove, stopImplement, StopImplementLockedError, writeImproveBrief, checkPack, compilePack, createPack, deletePack, findRequirementsDir, listPacks, provePack, summarizePacks, writeRequirement } from "./pack.js";
+import { implementPack, finishImplement, ignoreBuild, launchImprove, stopImplement, StopImplementLockedError, writeImproveBrief, checkPack, compilePack, createPack, deletePack, findRequirementsDir, listPacks, provePack, summarizePacks, writeRequirement, answerAgentQuestions, discardAgentQuestions } from "./pack.js";
 import { IgnoreBuildLockedError } from "./ready.js";
 import { ImproveLockedError } from "./improve.js";
 import {
@@ -20,6 +20,13 @@ import { adapterDisplayName, parseAdapterId } from "./adapter.js";
 import { pipelineView, sectionCatalog } from "./stages.js";
 import type { PackPaths } from "./pack.js";
 import type { ActivityChannel, ActivityLevel, ActivityLine, AdapterId, CompileResult } from "./types.js";
+import {
+  AGENT_QUESTIONS_WAITING,
+  AgentAnswersError,
+  applyAgentQuestionsGate,
+  isOpenQuestions,
+  readAgentQuestions,
+} from "./agent-questions.js";
 
 const cockpitDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../cockpit");
 
@@ -364,13 +371,18 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
         sendJson(res, { error: "No pack selected." }, 400);
         return;
       }
-      if (!state.implementLaunch || state.busy !== "implement") {
+      const waiting = isOpenQuestions(await readAgentQuestions(state.pack));
+      if ((!state.implementLaunch || state.busy !== "implement") && !waiting) {
         sendJson(res, { ...(await snapshot(state)), error: "Implement is not running." }, 409);
         return;
       }
       try {
-        const stopped = await stopImplement(state.pack, state.implementLaunch);
+        const stopped = waiting && (!state.implementLaunch || state.busy !== "implement")
+          ? await discardAgentQuestions(state.pack, state.implementLaunch)
+          : await stopImplement(state.pack, state.implementLaunch);
         state.last = stopped.result;
+        state.busy = null;
+        state.implementLaunch = null;
         pushActivity(state, stopped.message, "ok");
         await sendJson(res, { ...(await snapshot(state)), message: stopped.message });
       } catch (err) {
@@ -380,7 +392,7 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
             ...(await snapshot(state)),
             error: err instanceof Error ? err.message : "Stop failed.",
           },
-          err instanceof StopImplementLockedError ? 409 : 500,
+          err instanceof StopImplementLockedError || err instanceof AgentAnswersError ? 409 : 500,
         );
       }
       return;
@@ -409,6 +421,96 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
             error: err instanceof Error ? err.message : "Ignore failed.",
           },
           err instanceof IgnoreBuildLockedError ? 409 : 500,
+        );
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/agent-answers") {
+      if (!state.pack) {
+        sendJson(res, { error: "No pack selected." }, 400);
+        return;
+      }
+      if (state.busy) {
+        sendJson(res, { ...(await snapshot(state)), error: "Another action is already running." }, 409);
+        return;
+      }
+      const body = await readJson(req);
+      const raw = body["answers"];
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        sendJson(res, { error: "answers must be an object of question id to value." }, 400);
+        return;
+      }
+      const answers: Record<string, string> = {};
+      for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+        answers[id] = String(value ?? "");
+      }
+      const adapter = parseAdapterId(body["adapter"]) ?? "cursor";
+      try {
+        const answered = await answerAgentQuestions(state.pack, answers, {
+          adapter,
+          onLogLine: (line) => pushActivity(state, line),
+        });
+        state.last = answered.result;
+        const summary = Object.entries(answers)
+          .filter(([, value]) => value.trim())
+          .map(([id, value]) => `${id}: ${value.trim()}`)
+          .join("; ");
+        pushActivity(
+          state,
+          summary ? `Owner answered. ${summary}` : "Owner answered. Continuing.",
+          "ok",
+        );
+        if (answered.launch?.finished) {
+          state.busy = answered.channel === "improve" ? "improve" : "implement";
+          if (answered.channel === "implement") state.implementLaunch = answered.launch;
+          await yieldEventLoop();
+          await sendJson(res, {
+            ...(await snapshot(state)),
+            started: true,
+            message: answered.message,
+          });
+          if (answered.channel === "implement") {
+            void runImplement(state, state.pack, answered.launch, adapter);
+          } else {
+            void runImproveWait(state, answered.launch);
+          }
+          return;
+        }
+        await sendJson(res, { ...(await snapshot(state)), message: answered.message });
+      } catch (err) {
+        sendJson(
+          res,
+          {
+            ...(await snapshot(state)),
+            error: err instanceof Error ? err.message : "Could not continue.",
+          },
+          err instanceof AgentAnswersError ? 400 : 409,
+        );
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/agent-questions/discard") {
+      if (!state.pack) {
+        sendJson(res, { error: "No pack selected." }, 400);
+        return;
+      }
+      try {
+        const discarded = await discardAgentQuestions(state.pack, state.implementLaunch);
+        state.last = discarded.result;
+        state.busy = null;
+        state.implementLaunch = null;
+        pushActivity(state, discarded.message, "ok");
+        await sendJson(res, { ...(await snapshot(state)), message: discarded.message });
+      } catch (err) {
+        sendJson(
+          res,
+          {
+            ...(await snapshot(state)),
+            error: err instanceof Error ? err.message : "Could not discard questions.",
+          },
+          err instanceof AgentAnswersError ? 409 : 500,
         );
       }
       return;
@@ -468,10 +570,16 @@ async function snapshot(state: AppState) {
     state.last = await compilePack(state.pack);
   }
   const improveReview = state.pack ? await evaluateImproveReview(state.pack) : null;
+  const agentQuestions = state.pack ? await readAgentQuestions(state.pack) : null;
+  const openQuestions = isOpenQuestions(agentQuestions) ? agentQuestions : null;
   if (improveReview?.files.length && !state.implementActivity.some((line) => line.message === "Improve patch ready to review.")) {
     pushActivity(state, "Improve patch ready to review.", "ok");
   }
-  const health = state.last ? applyImproveReviewGate(state.last.health, improveReview) : null;
+  if (openQuestions && !state.implementActivity.some((line) => line.message === AGENT_QUESTIONS_WAITING)) {
+    pushActivity(state, AGENT_QUESTIONS_WAITING);
+  }
+  let health = state.last ? applyImproveReviewGate(state.last.health, openQuestions ? null : improveReview) : null;
+  if (health) health = applyAgentQuestionsGate(health, openQuestions);
   let proofReport = "";
   if (state.pack) {
     try {
@@ -498,6 +606,7 @@ async function snapshot(state: AppState) {
     proveActivity: state.proveActivity,
     busy: state.busy,
     improveReview,
+    agentQuestions,
   };
 }
 
@@ -538,10 +647,27 @@ async function decideImproveReview(state: AppState, res: ServerResponse, decisio
   });
 }
 
+async function runImproveWait(state: AppState, launch: LaunchAdapterResult): Promise<void> {
+  try {
+    if (launch.finished) await launch.finished;
+    if (state.pack && isOpenQuestions(await readAgentQuestions(state.pack))) {
+      pushActivity(state, AGENT_QUESTIONS_WAITING);
+    }
+  } catch (err) {
+    pushActivity(state, err instanceof Error ? err.message : "Improve failed.", "error");
+  } finally {
+    state.busy = null;
+  }
+}
+
 async function runImprove(state: AppState, pack: PackPaths, adapter: AdapterId): Promise<void> {
   try {
     const launched = await launchImprove(pack, { adapter });
     pushActivity(state, launched.message, launched.ok ? "ok" : "error");
+    if (launched.finished) await launched.finished;
+    if (isOpenQuestions(await readAgentQuestions(pack))) {
+      pushActivity(state, AGENT_QUESTIONS_WAITING);
+    }
   } catch (err) {
     pushActivity(state, err instanceof Error ? err.message : "Improve failed.", "error");
   } finally {
@@ -558,7 +684,8 @@ async function runImplement(
   try {
     const done = await finishImplement(pack, launch, adapter);
     if (state.pack?.root === pack.root) state.last = done.result;
-    pushActivity(state, done.message, done.result.health.build.state === "failed" ? "error" : "ok");
+    const waiting = done.message === AGENT_QUESTIONS_WAITING;
+    pushActivity(state, done.message, done.result.health.build.state === "failed" ? "error" : waiting ? "info" : "ok");
   } catch (err) {
     pushActivity(state, err instanceof Error ? err.message : "Implement failed.", "error");
   } finally {

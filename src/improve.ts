@@ -1,4 +1,5 @@
 import { NOUL_PASS } from "./gates.js";
+import { questionsBriefSection } from "./agent-questions.js";
 import type { ReadyFinding, ReadyMeter, SpecAst } from "./types.js";
 
 export class ImproveLockedError extends Error {
@@ -65,7 +66,7 @@ export function emitImproveBrief(input: {
     `# Improve: ${input.spec?.requirementId ?? "requirement"}`,
     "",
     "Opinionated writer pass. Patch the pack so a coding agent can implement without guessing.",
-    "Do not interview the owner. Apply the rules below to every named finding in one diff.",
+    "If a required decision is missing, write derived/agent-questions.json and stop. Do not guess. Do not patch requirement.md in that same turn.",
     "",
     "## Goal",
     "",
@@ -109,9 +110,11 @@ export function emitImproveBrief(input: {
     "- Do not write matrix talk in Outcome or Entities: no `is allow`, `is deny`, no restating action cells, no `without changing the matrix cell`.",
     "- Name the exact Choose / Look for / Select controls. State tester preconditions.",
     personas
-      ? "- Missing persona: add `email: <role-slug>@example.test` and `password: test-only-not-production` in fixtures/personas.yaml."
+      ? "- Missing persona: prefer asking whether the owner has a real test user. If they do not, add `email: <role-slug>@example.test` and `password: test-only-not-production` in fixtures/personas.yaml."
       : "- Do not add personas unless a finding is persona_missing.",
     "- You may edit every section the findings name. This is one pack pass.",
+    "",
+    questionsBriefSection().trimEnd(),
     "",
     "## Fence",
     "",

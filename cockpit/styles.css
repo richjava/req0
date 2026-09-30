@@ -242,7 +242,8 @@ body {
   margin-top: var(--space-3);
 }
 
-.topbar {
+.topbar,
+.subbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -250,6 +251,24 @@ body {
   padding: var(--space-3) var(--space-6);
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-1);
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.project-name {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-16);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .topbar-start {
@@ -283,9 +302,18 @@ body {
 }
 
 #all-requirements {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   flex-shrink: 0;
   white-space: nowrap;
-  align-self: flex-start;
+  align-self: center;
+}
+
+#all-requirements svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
 }
 
 .topbar-copy {
@@ -800,8 +828,7 @@ body {
   margin: 0;
   color: var(--text-muted);
   font-size: var(--text-13);
-  max-width: 16rem;
-  text-align: right;
+  max-width: 32rem;
 }
 
 .btn-primary,
@@ -1197,6 +1224,46 @@ body {
 .qa-tab.is-active {
   background: var(--surface-selected);
   color: var(--color-primary);
+}
+
+.question-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.question-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.question-card-prompt {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-14);
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.question-card-meta {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-12);
+}
+
+.question-choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.question-choices .stack-choice {
+  padding: var(--space-3);
 }
 
 .activity-log .list-row,
@@ -1686,7 +1753,7 @@ body {
     border-bottom: 1px solid var(--border-subtle);
   }
 
-  .topbar,
+  .subbar,
   .topbar-start,
   .create-bar {
     flex-direction: column;

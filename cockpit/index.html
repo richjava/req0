@@ -16,11 +16,21 @@
   <body>
     <div class="app-shell app-shell-pipeline">
       <header class="topbar">
-        <div class="topbar-start">
+        <div class="topbar-brand">
           <button type="button" class="home-btn" id="home-btn" aria-label="All requirements">
             <img class="logo-horiz" src="/req0-logo-horiz.png" alt="Req0" width="148" height="36" />
           </button>
-          <button type="button" class="btn-secondary hidden" id="all-requirements">All requirements</button>
+          <p class="project-name" id="project-name"></p>
+        </div>
+      </header>
+      <header class="subbar" id="subbar">
+        <div class="topbar-start">
+          <button type="button" class="btn-secondary hidden" id="all-requirements">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M13 8H3.5M6.2 4.8 3 8l3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            All requirements
+          </button>
           <div class="topbar-copy">
             <p class="sidebar-pack" id="pack-title">Loading…</p>
             <p class="going" id="how-going">Loading…</p>
@@ -101,9 +111,14 @@
                   <button type="button" class="btn-secondary cta" id="review-reject">Reject</button>
                   <button type="button" class="btn-primary cta" id="review-accept" disabled>Accept</button>
                 </div>
+                <div class="review-actions hidden" id="question-actions">
+                  <button type="button" class="btn-secondary cta" id="question-stop">Stop</button>
+                  <button type="button" class="btn-primary cta" id="question-continue" disabled>Continue</button>
+                </div>
               </div>
               <div id="editor" class="markdown-editor" aria-label="requirement.md"></div>
               <div class="review-diff hidden" id="review-diff" hidden></div>
+              <div class="question-panel hidden" id="define-questions" hidden></div>
               <p class="save-state" id="save-state"></p>
             </section>
 
@@ -133,7 +148,16 @@
                   <button type="button" class="pill-btn cta" id="action-build-stop" hidden disabled></button>
                 </div>
               </div>
-              <p class="nav-label">Activity</p>
+              <div class="qa-tab-bar hidden" id="implement-tabs" role="tablist" hidden>
+                <button type="button" class="qa-tab is-active" role="tab" id="implement-tab-questions" aria-selected="true" aria-controls="implement-questions">
+                  Questions
+                </button>
+                <button type="button" class="qa-tab" role="tab" id="implement-tab-activity" aria-selected="false" aria-controls="implement-activity">
+                  Activity
+                </button>
+              </div>
+              <p class="nav-label" id="implement-activity-label">Activity</p>
+              <div class="question-panel hidden" id="implement-questions" hidden></div>
               <ol id="implement-activity" class="list-rows activity-log activity-log-main"></ol>
             </section>
 
@@ -166,6 +190,13 @@
         </div>
       </div>
     </div>
+    <dialog id="discard-questions-dialog" class="confirm-dialog">
+      <p>Stop and discard unanswered questions?</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-secondary" id="discard-questions-cancel">Cancel</button>
+        <button type="button" class="btn-primary cta-danger" id="discard-questions-confirm">Stop</button>
+      </div>
+    </dialog>
     <dialog id="ignore-build-dialog" class="confirm-dialog">
       <p>Was implementation successful?</p>
       <div class="dialog-actions">

@@ -43,6 +43,13 @@ export function evaluateBuild(spec: SpecAst | null, run: BuildRun | null): Build
     };
   }
   if (run.state === "running" && !isFollowedImplement(run.pid)) {
+    if (run.waitingOnQuestions) {
+      return {
+        state: "running",
+        adapter: run.adapter,
+        message: run.message,
+      };
+    }
     return {
       state: "failed",
       adapter: run.adapter,

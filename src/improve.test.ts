@@ -134,6 +134,8 @@ describe("improve pass", () => {
     expect(brief).toContain("Statement: s");
     expect(brief).toContain("one pack pass");
     expect(brief).toContain("Do not invent spec IDs");
+    expect(brief).toContain("agent-questions.json");
+    expect(brief).not.toContain("Do not interview the owner");
     expect(brief).not.toContain("Owner answers");
     expect(brief).not.toContain("Patch only this finding");
   });
@@ -147,6 +149,9 @@ describe("improve pass", () => {
   it("puts the improve brief path in the Cursor prompt", () => {
     expect(improvePrompt("/repo/docs/requirements/pack/derived/improve-brief.md")).toContain(
       "/repo/docs/requirements/pack/derived/improve-brief.md",
+    );
+    expect(improvePrompt("/repo/docs/requirements/pack/derived/improve-brief.md")).toContain(
+      "agent-questions.json",
     );
   });
 });

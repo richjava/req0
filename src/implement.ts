@@ -12,6 +12,9 @@ export const IMPLEMENT_MAX_MS = 20 * 60 * 1000;
 export const IMPLEMENT_STOPPED = "Owner stopped Implement.";
 export const IMPLEMENT_SANDBOX_CAP = `Stopped after ${IMPLEMENT_SANDBOX_MAX} sandbox deploys. Reimplement or Ignore, then Prove.`;
 export const IMPLEMENT_TIME_CAP = `Stopped after ${IMPLEMENT_MAX_MS / 60_000} minutes. Reimplement or Ignore, then Prove.`;
+/** Cursor `--print` can emit `result` and then hang. Kill the leftover process after this grace. */
+export const IMPLEMENT_EXIT_GRACE_MS = 3_000;
+const AGENT_LOG_LINE_MAX = 65_536;
 
 export type ImplementStop = { reason?: string };
 
@@ -51,6 +54,8 @@ export type LaunchAdapterDeps = {
   maxMs?: number;
   heartbeatLabel?: string;
   cliName?: string;
+  /** After a stream `result` event, kill a hung CLI if it has not exited. Default 3s. */
+  exitGraceMs?: number;
 };
 
 export type LaunchAdapterResult = {
@@ -81,6 +86,7 @@ export function implementPrompt(briefPath: string, stackId?: string): string {
     "Implement this requirement from the brief.",
     `Read ${briefPath} and derived/spec.json.`,
     "Do not invent spec IDs. Implement only the named BR- and UC- IDs.",
+    "If a required decision is missing, write derived/agent-questions.json and stop. Do not guess stack, auth, storage, or owner-facing copy. Do not write product code in that same turn.",
     "If this product repo has no customer app, use the stack recorded in req0.json.",
     "Seed the app from existing fixtures/personas.yaml. Do not invent personas.",
     "Finish fixtures/runtime.yaml so baseUrl, startCommand, and resetCommand match the app. Keep login selectors unless you change /login to match.",
@@ -98,6 +104,7 @@ export function fixFromProofPrompt(briefPath: string, reportPath: string, implem
     "Fix the existing product from the last Prove.",
     `Read ${briefPath}, then ${reportPath}, then ${implementBriefPath}.`,
     "Close only the Failed and Needs review cases. Do not invent spec IDs.",
+    "If a required decision is missing, write derived/agent-questions.json and stop. Do not guess. Do not write product code in that same turn.",
     "Do not edit requirement.md. Do not scaffold a second application.",
     "Boot or Sign-in observations may be fixtures or runtime.yaml, not a missing control.",
     "Do not treat this launch as proof the app boots.",
@@ -112,6 +119,7 @@ export function improvePrompt(briefPath: string): string {
     "Patch requirement.md only. If the brief asks for a persona, you may also edit fixtures/personas.yaml.",
     "Outcome is what a person sees. Do not paste matrix allow/deny cells into Outcome. Look for is deny; Choose is allow.",
     "Do not invent spec IDs. Do not implement the product app.",
+    "If a required decision is missing, write derived/agent-questions.json and stop. Do not guess. Do not patch requirement.md in that same turn.",
     "Stop after the patch so the owner can review the diff, then Check with Jev.",
   ].join(" ");
 }
@@ -383,6 +391,7 @@ function launchLogged(
       sandboxMax: deps.sandboxMax ?? IMPLEMENT_SANDBOX_MAX,
       maxMs: deps.maxMs ?? IMPLEMENT_MAX_MS,
       heartbeatLabel: deps.heartbeatLabel ?? `${deps.cliName ?? "Cursor"} agent still running.`,
+      exitGraceMs: deps.exitGraceMs ?? IMPLEMENT_EXIT_GRACE_MS,
     });
     child.once("error", (err) => {
       resolve({
@@ -404,16 +413,35 @@ export function attachAgentLog(
   child: ChildProcess,
   logPath: string,
   onLogLine?: (line: string) => void,
-  control: { stop?: ImplementStop; sandboxMax?: number; maxMs?: number; heartbeatLabel?: string } = {},
+  control: {
+    stop?: ImplementStop;
+    sandboxMax?: number;
+    maxMs?: number;
+    heartbeatLabel?: string;
+    exitGraceMs?: number;
+  } = {},
 ): Promise<{ code: number | null }> {
   const stream = createWriteStream(logPath, { flags: "w" });
   const stop = control.stop ?? {};
   const sandboxMax = control.sandboxMax ?? IMPLEMENT_SANDBOX_MAX;
   const maxMs = control.maxMs ?? IMPLEMENT_MAX_MS;
   const heartbeatLabel = control.heartbeatLabel ?? "Agent still running.";
+  const exitGraceMs = control.exitGraceMs ?? IMPLEMENT_EXIT_GRACE_MS;
   let lastEmit = Date.now();
   let lastShown = "";
   let sandboxStarts = 0;
+  let settled = false;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  let hangKill: ReturnType<typeof setTimeout> | undefined;
+  let settle: (done: { code: number | null }) => void = () => undefined;
+  const finish = (code: number | null) => {
+    if (settled) return;
+    settled = true;
+    if (heartbeat) clearInterval(heartbeat);
+    if (deadline) clearTimeout(deadline);
+    settle({ code });
+  };
   const feed = makeLineFeeder((line) => {
     if (isSandboxOnceStart(line)) {
       sandboxStarts += 1;
@@ -427,22 +455,31 @@ export function attachAgentLog(
         return;
       }
     }
-    const text = summarizeAgentLine(redactSecrets(line));
-    if (!text || text === lastShown) return;
-    lastShown = text;
-    lastEmit = Date.now();
-    onLogLine?.(text);
+    const raw = redactSecrets(line);
+    const outcome = agentStreamOutcome(raw);
+    const text = summarizeAgentLine(raw);
+    if (text && text !== lastShown) {
+      lastShown = text;
+      lastEmit = Date.now();
+      onLogLine?.(text);
+    }
+    if (!outcome || settled) return;
+    finish(outcome === "success" ? 0 : 1);
+    hangKill = setTimeout(() => {
+      if (child.exitCode === null || child.exitCode === undefined) killImplementTree(child);
+    }, Math.max(0, exitGraceMs));
+    hangKill.unref?.();
   });
-  const heartbeat = onLogLine
+  heartbeat = onLogLine
     ? setInterval(() => {
-        if (Date.now() - lastEmit < 20_000) return;
+        if (settled || Date.now() - lastEmit < 20_000) return;
         lastEmit = Date.now();
         lastShown = heartbeatLabel;
         onLogLine(lastShown);
       }, 5_000)
     : undefined;
   heartbeat?.unref?.();
-  const deadline =
+  deadline =
     maxMs > 0
       ? setTimeout(() => {
           requestImplementStop(child, stop, IMPLEMENT_TIME_CAP);
@@ -463,12 +500,14 @@ export function attachAgentLog(
     feed(chunk);
   });
   return new Promise((resolve) => {
+    settle = resolve;
     child.once("close", (code) => {
+      if (hangKill) clearTimeout(hangKill);
       if (heartbeat) clearInterval(heartbeat);
       if (deadline) clearTimeout(deadline);
       feed("\n");
       stream.end();
-      resolve({ code });
+      finish(code);
     });
   });
 }
@@ -514,6 +553,18 @@ export function isSandboxOnceStart(line: string): boolean {
     return text.includes("ampx sandbox") && text.includes("--once");
   } catch {
     return false;
+  }
+}
+
+export function agentStreamOutcome(line: string): "success" | "error" | null {
+  const text = line.trim();
+  if (!text.startsWith("{")) return null;
+  try {
+    const event = JSON.parse(text) as Record<string, unknown>;
+    if (event.type !== "result") return null;
+    return event.is_error === true || event.subtype === "error" ? "error" : "success";
+  } catch {
+    return null;
   }
 }
 
@@ -652,7 +703,7 @@ function makeLineFeeder(onLine: (line: string) => void): (chunk: Buffer | string
     pending = lines.pop() ?? "";
     for (const line of lines) {
       const text = line.trim();
-      if (text) onLine(text.slice(0, 280));
+      if (text) onLine(text.length > AGENT_LOG_LINE_MAX ? text.slice(0, AGENT_LOG_LINE_MAX) : text);
     }
   };
 }
@@ -676,7 +727,7 @@ async function waitForAgent(
   if (settleMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, settleMs));
   }
-  if (!child || child.exitCode === null || child.exitCode === undefined) {
+  if (!child || child.exitCode === null || child.exitCode === undefined || child.exitCode === 0) {
     return { ok: true, message: "started" };
   }
   const tail = tailLog(logPath);

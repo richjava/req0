@@ -10,7 +10,7 @@ import { isRequirementId } from "./compile.js";
 import { adapterInstructions, ImplementDisabledError, ImplementLockedError } from "./implement.js";
 import { FixFromProofLockedError } from "./fix-from-proof.js";
 import { StackRequiredError, UnknownStackError } from "./stack.js";
-import { checkPack, compilePack, createPack, findRequirementsDir, finishImplement, implementPack, provePack, resolveCockpitPack, resolvePack } from "./pack.js";
+import { checkPack, compilePack, createPack, findRequirementsDir, finishImplement, implementPack, provePack, resolveCockpitPack, resolvePack, shouldRefreshForWatch } from "./pack.js";
 import { ProveLockedError } from "./proof.js";
 import { createAppState, createCockpitServer, refresh } from "./server.js";
 
@@ -211,7 +211,10 @@ async function startCockpit(cwd: string): Promise<void> {
   };
   for (const watchPath of watchTargets) {
     try {
-      const watcher = watch(watchPath, { recursive: Boolean(requirementsDir) }, () => schedule());
+      const watcher = watch(watchPath, { recursive: Boolean(requirementsDir) }, (_event, filename) => {
+        if (!shouldRefreshForWatch(watchPath, filename)) return;
+        schedule();
+      });
       watcher.on("error", (err) => {
         console.error(`File watch unavailable (${err.message}). Save from the cockpit still compiles.`);
       });

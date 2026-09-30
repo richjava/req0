@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { createPack, packPaths } from "./pack.js";
+import { writeAgentQuestions } from "./agent-questions.js";
 import { createAppState, createCockpitServer } from "./server.js";
 import { readReq0Config } from "./stack.js";
 
@@ -36,6 +37,8 @@ describe("cockpit reload contract", () => {
     expect(js).toMatch(/implementActivity/);
     expect(js).toMatch(/proveActivity/);
     expect(js).toMatch(/qaTab = "activity"/);
+    expect(js).toMatch(/implementTab = "questions"/);
+    expect(js).toMatch(/\/api\/agent-answers/);
     expect(js).not.toMatch(/\bactivityLines\b/);
     expect(js).toMatch(/from\s+["']\.\/markdown-editor\.js["']/);
     const bundle = await readFile(path.join(cockpitDir, "markdown-editor.js"), "utf8");
@@ -95,6 +98,11 @@ describe("cockpit reload contract", () => {
     expect(html).toContain('id="implement-activity"');
     expect(html).toContain('id="qa-activity"');
     expect(html).toContain('id="qa-tabs"');
+    expect(html).toContain("define-questions");
+    expect(html).toContain("implement-questions");
+    expect(html).toContain("question-continue");
+    expect(html).toContain("implement-tab-questions");
+    expect(html).toContain("discard-questions-dialog");
     expect(html).toContain("action-build-ignore");
     expect(html).toContain("action-build-stop");
     expect(html).toContain("markdown-editor");
@@ -230,6 +238,62 @@ describe("cockpit reload contract", () => {
         body: JSON.stringify({ id: "busy-pack" }),
       });
       expect(blocked.status).toBe(409);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("overlays Continue for open questions and resumes after POST /api/agent-answers", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "req0-questions-api-"));
+    try {
+      const pack = await createPack(path.join(parent, "docs/requirements/ask-pack"));
+      await writeAgentQuestions(pack, {
+        version: 1,
+        channel: "improve",
+        status: "open",
+        at: "2026-09-29T10:00:00.000Z",
+        questions: [
+          {
+            id: "q1",
+            prompt: "Which option should we take?",
+            kind: "choice",
+            options: [
+              { id: "a", label: "Option A" },
+              { id: "b", label: "Option B" },
+            ],
+            required: true,
+          },
+        ],
+      });
+      const { url } = await listen(createAppState(parent, pack));
+      const snap = await (await fetch(`${url}/api/state`)).json();
+      expect(snap.health.nextAction).toMatchObject({ id: "answer-questions", label: "Continue" });
+      expect(snap.agentQuestions.status).toBe("open");
+      expect(snap.health).not.toHaveProperty("questions");
+      const healthFile = JSON.parse(await readFile(pack.health, "utf8"));
+      expect(healthFile).toMatchObject({ spec: expect.anything(), ready: expect.anything(), build: expect.anything(), proof: expect.anything() });
+      expect(healthFile).not.toHaveProperty("questions");
+      const missing = await fetch(`${url}/api/agent-answers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: {}, adapter: "manual" }),
+      });
+      expect(missing.status).toBe(400);
+      const answered = await fetch(`${url}/api/agent-answers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: { q1: "b" }, adapter: "manual" }),
+      });
+      expect(answered.status).toBe(200);
+      const body = await answered.json();
+      expect(body.health.nextAction.id).not.toBe("answer-questions");
+      expect(JSON.parse(await readFile(pack.agentQuestions, "utf8")).status).toBe("answered");
+      const again = await fetch(`${url}/api/agent-answers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: { q1: "a" }, adapter: "manual" }),
+      });
+      expect(again.status).toBe(400);
     } finally {
       await rm(parent, { recursive: true, force: true });
     }

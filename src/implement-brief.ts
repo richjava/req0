@@ -1,4 +1,5 @@
 import type { PersonasResult } from "./personas.js";
+import { questionsBriefSection } from "./agent-questions.js";
 import { DEFAULT_STACK, isAmplifyStack, stackInstruction } from "./stack.js";
 import type { AdapterId, ProductRepo, SpecAst, StackChoice } from "./types.js";
 
@@ -119,6 +120,8 @@ export function emitImplementBrief(input: {
     "- Write `README.md` at the product repo root using the Product README section. Use this requirement's title and pack paths. Do not invent a product name.",
     "- The seed/reset script command must match `runtime.yaml` `resetCommand`.",
     "- First-party `/login` must match those selectors.",
+    "",
+    questionsBriefSection().trimEnd(),
     "",
     "## Security baseline",
     "",

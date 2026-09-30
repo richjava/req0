@@ -38,6 +38,7 @@ describe("emitImplementBrief", () => {
     expect(brief).toContain("README.md");
     expect(brief).toContain("docs/requirements/invoice-approval/fixtures/personas.yaml");
     expect(brief).toContain("fixtures/runtime.yaml");
+    expect(brief).toContain("agent-questions.json");
     expect(brief).toContain("amplify-gen2");
     expect(brief).not.toContain("## AWS");
     expect(brief).not.toContain("test-only-not-production");

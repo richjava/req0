@@ -464,4 +464,17 @@ describe("evaluateBuild", () => {
       followedImplementPids.clear();
     }
   });
+
+  it("keeps a waiting-on-questions stamp running without a followed pid", () => {
+    expect(
+      evaluateBuild(spec, {
+        specHash: specHash(spec),
+        state: "running",
+        adapter: "cursor",
+        at: "2026-01-01T00:00:00.000Z",
+        waitingOnQuestions: true,
+        message: "Waiting on owner questions.",
+      }),
+    ).toMatchObject({ state: "running", message: "Waiting on owner questions." });
+  });
 });

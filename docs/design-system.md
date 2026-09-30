@@ -53,14 +53,15 @@ Space: `--space-1` … `--space-6` (4px grid). Radius: 8px controls, 12px panels
 | `.topbar` / `.logo-horiz` / `.home-btn` / `.btn-primary` / `.btn-secondary` / `.cta` | Header: wordmark is home, pack copy, primary action. CTAs use an icon + label. Action hints sit on hover (`data-hint`), not beside the button |
 | `.pack-home` / `.pack-list` / `.pack-row` / `.pack-meter` | Requirement list home. Row meters use `data-tone` idle / draft / ok / bad / progress |
 | `.context-menu` / `.context-menu-item` / `.context-menu-danger` | Right-click menu on a list row. Delete is the only item |
-| `.confirm-dialog` | Modal confirm chrome. Ignore (Yes/No/Cancel) and Delete (Cancel + danger Confirm) |
+| `.confirm-dialog` | Modal confirm chrome. Ignore (Yes/No/Cancel), Delete (Cancel + danger Confirm), and Stop-and-discard unanswered questions |
 | `.pill-btn` | Stage CTAs (Check, Implement, Prove, Stop). Same `.cta` treatment as the header. Stop is a secondary pill. `.cta-danger` is Reject and Delete in a confirm dialog |
-| `.stack-gate` / `.stack-choice` | First-run setup: coding choice (manual / Cursor / Copilot) then stack when the repo is empty |
+| `.stack-gate` / `.stack-choice` | First-run setup: coding choice (manual / Cursor / Copilot) then stack when the repo is empty. Choice cards are reused for agent questions |
 | `.list-row` | Spec sections, findings, activity |
 | `.status-bar` / `.status-bar-mark` / `.status-bar-meta` | Stage content header: pill bar with tone, title, and icon meta. `data-tone` is idle / draft / ok / bad / progress |
 | `.spec-section` | Section checklist rows (present / missing / error) |
 | `.proof-report` | QA artifact (`derived/proof-report.md`) |
-| `.qa-tab-bar` / `.qa-tab` | QA Activity / Report tabs when a report exists. Activity is first and default |
+| `.qa-tab-bar` / `.qa-tab` | QA Activity / Report tabs when a report exists (Activity first and default). Same tabs on Implement for Questions / Activity when questions are open (Questions first and default) |
+| `.question-panel` / `.question-card` / `.question-choices` | In-stage agent questionnaire on Define (Improve) and Implement. Free text uses `.input`. Trade-offs use `.stack-choice` cards |
 | `.input` | `--surface-3` fields |
 | `.markdown-editor` / `.md-toolbar` / `.md-menu` / `.md-preview` | Define-only editor: Preview default, Edit source, Split. Sticky toolbar. Heading control is a dropdown. Preview uses `--font-ui`; Edit uses `--font-mono` |
 | `.review-diff` / `.review-file` / `.diff-add` / `.diff-del` | Improve patch review on Define; add/del use status ok/bad surfaces |

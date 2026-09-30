@@ -5,6 +5,7 @@ import path from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import {
+  agentStreamOutcome,
   adapterInstructions,
   assertImplementAllowed,
   IMPLEMENT_SANDBOX_CAP,
@@ -75,6 +76,7 @@ describe("implement lock", () => {
   });
 
   it("puts the brief path in the Cursor agent prompt", () => {
+    expect(implementPrompt("/repo/derived/implement-brief.md")).toContain("agent-questions.json");
     expect(implementPrompt("/repo/derived/implement-brief.md")).toContain("/repo/derived/implement-brief.md");
     expect(implementPrompt("/repo/derived/implement-brief.md")).toContain("fixtures/runtime.yaml");
     expect(implementPrompt("/repo/derived/implement-brief.md")).toContain("fixtures/personas.yaml");
@@ -227,6 +229,17 @@ describe("implement lock", () => {
         JSON.stringify({ type: "result", subtype: "success", duration_ms: 125000, is_error: false }),
       ),
     ).toBe("Cursor agent finished in 2m 5s.");
+    expect(
+      agentStreamOutcome(
+        JSON.stringify({ type: "result", subtype: "success", duration_ms: 125000, result: "x".repeat(400) }),
+      ),
+    ).toBe("success");
+    expect(
+      agentStreamOutcome(
+        JSON.stringify({ type: "result", subtype: "error", is_error: true, duration_ms: 20 }),
+      ),
+    ).toBe("error");
+    expect(agentStreamOutcome(JSON.stringify({ type: "assistant" }))).toBeNull();
     expect(summarizeAgentLine(JSON.stringify({ type: "user", message: { content: [] } }))).toBeNull();
     expect(summarizeAgentLine("Connection lost, reconnecting…")).toBe(
       "Connection lost, reconnecting…",
@@ -269,6 +282,68 @@ describe("implement lock", () => {
       ),
     ).toBe(false);
     expect(isSandboxOnceStart("npx ampx sandbox --once")).toBe(true);
+  });
+
+  it("treats a stream result as finished even if the CLI process hangs", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "req0-result-hang-"));
+    const brief = path.join(dir, "derived", "implement-brief.md");
+    const lines: string[] = [];
+    const killed: string[] = [];
+    try {
+      await mkdir(path.join(dir, "derived"), { recursive: true });
+      const launched = await launchAdapter("cursor", dir, brief, {
+        spawn: (() => {
+          const child = new EventEmitter() as EventEmitter & {
+            stdout: PassThrough;
+            stderr: PassThrough;
+            pid: number;
+            exitCode: number | null;
+            kill: (signal?: string) => boolean;
+            unref: () => void;
+          };
+          child.stdout = new PassThrough();
+          child.stderr = new PassThrough();
+          child.pid = 4242;
+          child.exitCode = null;
+          child.unref = () => undefined;
+          child.kill = () => {
+            killed.push("term");
+            child.exitCode = 143;
+            queueMicrotask(() => child.emit("close", 143));
+            return true;
+          };
+          queueMicrotask(() => {
+            child.emit("spawn");
+            child.stdout.write(
+              `${JSON.stringify({
+                type: "result",
+                subtype: "success",
+                duration_ms: 90_000,
+                is_error: false,
+                result: "done ".repeat(80),
+              })}\n`,
+            );
+          });
+          return child;
+        }) as typeof import("node:child_process").spawn,
+        resolveBin: () => "/fake/cursor",
+        settleMs: 30,
+        openIde: false,
+        maxMs: 0,
+        exitGraceMs: 80,
+        onLogLine: (line) => lines.push(line),
+      });
+      expect(launched.ok).toBe(true);
+      const done = await launched.finished;
+      expect(done).toEqual({ code: 0 });
+      expect(launched.stop?.reason).toBeUndefined();
+      expect(lines.some((line) => line.startsWith("Cursor agent finished"))).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      expect(killed.length).toBeGreaterThan(0);
+      expect(lines).not.toContain("Cursor agent still running.");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("stops the agent after too many sandbox deploys", async () => {

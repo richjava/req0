@@ -17,7 +17,7 @@ import {
 import { assertFixFromProofAllowed, emitFixFromProofBrief, FixFromProofLockedError } from "./fix-from-proof.js";
 import { assertImproveAllowed, emitImproveBrief, improveFindings } from "./improve.js";
 import { clearImproveLog, readImproveLog, recordImprovePending } from "./improve-log.js";
-import { beginImproveReview, ImproveReviewPendingError, readImproveSnapshot } from "./improve-review.js";
+import { beginImproveReview, ImproveReviewPendingError, readImproveSnapshot, rejectImproveReview } from "./improve-review.js";
 import { emitImplementBrief } from "./implement-brief.js";
 import { hasJevAccess, JevRequestError, JevUnavailableError, resolveJevClient, type JevClient } from "./jev.js";
 import { emitJevPack } from "./jev-pack.js";
@@ -57,6 +57,16 @@ import {
 } from "./stack.js";
 import { loadStarterRequirement, PERSONAS_STUB, RUNTIME_STUB } from "./template.js";
 import type { AdapterId, BuildRun, CompileResult, Health, JevRun, PackListItem, ProgressFn, ProofRun, SpecAst } from "./types.js";
+import {
+  AGENT_QUESTIONS_WAITING,
+  AgentAnswersError,
+  applyAnswers,
+  clearAgentQuestions,
+  isOpenQuestions,
+  readAgentQuestions,
+  withOwnerAnswers,
+  writeAgentQuestions,
+} from "./agent-questions.js";
 
 export const REQUIREMENT_FILE = "requirement.md";
 export const PERSONAS_FILE = path.join("fixtures", "personas.yaml");
@@ -84,6 +94,7 @@ export type PackPaths = {
   proofRun: string;
   proofReport: string;
   proveLog: string;
+  agentQuestions: string;
 };
 
 export function packPaths(root: string): PackPaths {
@@ -111,7 +122,14 @@ export function packPaths(root: string): PackPaths {
     proofRun: path.join(derived, "proof-run.json"),
     proofReport: path.join(derived, "proof-report.md"),
     proveLog: path.join(derived, "prove-run.log"),
+    agentQuestions: path.join(derived, "agent-questions.json"),
   };
+}
+
+export async function withRememberedAnswers(paths: PackPaths, prompt: string): Promise<string> {
+  const round = await readAgentQuestions(paths);
+  if (!round || round.status !== "answered" || round.channel !== "implement") return prompt;
+  return withOwnerAnswers(prompt, round);
 }
 
 export async function isPackDir(dir: string): Promise<boolean> {
@@ -266,6 +284,7 @@ export async function compilePack(paths: PackPaths): Promise<CompileResult> {
   const buildRun = await readBuildRun(paths);
   if (
     buildRun?.state === "running" &&
+    !buildRun.waitingOnQuestions &&
     !isFollowedImplement(buildRun.pid) &&
     implementProcessGone(buildRun.pid)
   ) {
@@ -340,22 +359,44 @@ export async function checkPack(paths: PackPaths, client?: JevClient): Promise<C
   }
 }
 
+export function isPackWatchInput(filename: string): boolean {
+  const relative = filename.replaceAll("\\", "/").replace(/^\.\//, "");
+  if (!relative || relative.split("/").includes("derived")) return false;
+  const base = path.posix.basename(relative);
+  return base === REQUIREMENT_FILE || base === path.posix.basename(PERSONAS_FILE) || base === path.posix.basename(RUNTIME_FILE);
+}
+
+export function shouldRefreshForWatch(watchPath: string, filename?: string | Buffer | null): boolean {
+  const relative = typeof filename === "string" ? filename : Buffer.isBuffer(filename) ? filename.toString("utf8") : "";
+  if (relative.trim()) return isPackWatchInput(relative);
+  return isPackWatchInput(path.basename(watchPath));
+}
+
 export async function persistDerived(paths: PackPaths, result: CompileResult): Promise<void> {
   await mkdir(paths.derived, { recursive: true });
   if (result.spec) {
-    await writeFile(paths.spec, `${JSON.stringify(result.spec, null, 2)}\n`, "utf8");
+    await writeIfChanged(paths.spec, `${JSON.stringify(result.spec, null, 2)}\n`);
   }
   if (result.jevPack) {
-    await writeFile(paths.jevPack, `${JSON.stringify(result.jevPack, null, 2)}\n`, "utf8");
+    await writeIfChanged(paths.jevPack, `${JSON.stringify(result.jevPack, null, 2)}\n`);
   }
   if (result.implementBrief) {
-    await writeFile(paths.implementBrief, result.implementBrief, "utf8");
+    await writeIfChanged(paths.implementBrief, result.implementBrief);
   }
   if (result.qaPlan) {
-    await writeFile(paths.qaPlan, emitQaPlanYaml(result.qaPlan), "utf8");
+    await writeIfChanged(paths.qaPlan, emitQaPlanYaml(result.qaPlan));
   }
-  await writeFile(paths.health, `${JSON.stringify(result.health, null, 2)}\n`, "utf8");
-  await writeFile(paths.status, healthToStatusMarkdown(result.health), "utf8");
+  await writeIfChanged(paths.health, `${JSON.stringify(result.health, null, 2)}\n`);
+  await writeIfChanged(paths.status, healthToStatusMarkdown(result.health));
+}
+
+async function writeIfChanged(file: string, contents: string): Promise<void> {
+  try {
+    if ((await readFile(file, "utf8")) === contents) return;
+  } catch {
+    // missing
+  }
+  await writeFile(file, contents, "utf8");
 }
 
 async function readJevRun(paths: PackPaths, spec: SpecAst): Promise<JevRun | null> {
@@ -410,7 +451,7 @@ export async function writeRuntimeStubIfMissing(paths: PackPaths): Promise<boole
 async function readBuildRun(paths: PackPaths): Promise<BuildRun | null> {
   try {
     const raw = JSON.parse(await readFile(paths.buildRun, "utf8")) as BuildRun;
-    if (!raw.specHash || !raw.state) return null;
+    if (typeof raw.specHash !== "string" || !raw.state) return null;
     return raw;
   } catch {
     return null;
@@ -419,11 +460,21 @@ async function readBuildRun(paths: PackPaths): Promise<BuildRun | null> {
 
 export async function implementPack(
   paths: PackPaths,
-  options: { adapter?: AdapterId; stack?: string; fromProof?: boolean; onLogLine?: (line: string) => void } = {},
+  options: {
+    adapter?: AdapterId;
+    stack?: string;
+    fromProof?: boolean;
+    onLogLine?: (line: string) => void;
+    extraPrompt?: string;
+    resume?: boolean;
+  } = {},
 ): Promise<{ result: CompileResult; message: string; launch?: LaunchAdapterResult }> {
   const compiled = await compilePack(paths);
+  if (!options.resume && isOpenQuestions(await readAgentQuestions(paths))) {
+    throw new AgentAnswersError("Answer the agent's questions, or Stop, before starting a new Implement.");
+  }
   assertImplementAllowed(compiled);
-  if (options.fromProof) {
+  if (options.fromProof && !options.resume) {
     assertFixFromProofAllowed(compiled.health, compiled.health.ready);
     if (!compiled.spec) throw new FixFromProofLockedError();
   }
@@ -453,6 +504,8 @@ export async function implementPack(
     briefPath = paths.fixFromProofBrief;
     prompt = fixFromProofPrompt(paths.fixFromProofBrief, paths.proofReport, paths.implementBrief);
   }
+  prompt = await withRememberedAnswers(paths, prompt);
+  if (options.extraPrompt) prompt = `${prompt}\n\n${options.extraPrompt}`;
   const launch = await launchAdapter(adapter, repo.root, briefPath, {
     onLogLine: options.onLogLine,
     prompt,
@@ -466,6 +519,7 @@ export async function implementPack(
     at: new Date().toISOString(),
     message: launch.message,
     ...(following && launch.child?.pid ? { pid: launch.child.pid } : {}),
+    ...(options.fromProof ? { fromProof: true } : {}),
   });
   return { result: await compilePack(paths), message: launch.message, launch };
 }
@@ -478,7 +532,21 @@ export async function finishImplement(
   const done = launch.finished ? await launch.finished : { code: launch.ok ? 0 : 1 };
   unfollowImplementPid(launch.child?.pid);
   const compiled = await compilePack(paths);
+  const previous = await readBuildRun(paths);
   const stopped = launch.stop?.reason;
+  const waiting = !stopped && isOpenQuestions(await readAgentQuestions(paths));
+  if (waiting) {
+    await writeBuildRun(paths, {
+      specHash: compiled.spec ? specHash(compiled.spec) : previous?.specHash ?? "",
+      state: "running",
+      adapter,
+      at: new Date().toISOString(),
+      message: AGENT_QUESTIONS_WAITING,
+      waitingOnQuestions: true,
+      ...(previous?.fromProof ? { fromProof: true } : {}),
+    });
+    return { result: await compilePack(paths), message: AGENT_QUESTIONS_WAITING };
+  }
   const ok = !stopped && launch.ok && done.code === 0;
   const name = adapterDisplayName(adapter);
   const message = stopped
@@ -492,6 +560,7 @@ export async function finishImplement(
     adapter,
     at: new Date().toISOString(),
     message,
+    ...(previous?.fromProof ? { fromProof: true } : {}),
   });
   return { result: await compilePack(paths), message };
 }
@@ -507,14 +576,18 @@ export class StopImplementLockedError extends Error {
 
 export async function stopImplement(
   paths: PackPaths,
-  launch: LaunchAdapterResult,
+  launch: LaunchAdapterResult | null,
   reason = IMPLEMENT_STOPPED,
 ): Promise<{ result: CompileResult; message: string }> {
-  if (!launch.child && !launch.finished) {
+  const waiting = isOpenQuestions(await readAgentQuestions(paths));
+  if (!waiting && !launch?.child && !launch?.finished) {
     throw new StopImplementLockedError();
   }
-  const stop = launch.stop ?? (launch.stop = {});
-  requestImplementStop(launch.child, stop, reason);
+  if (launch?.child || launch?.finished) {
+    const stop = launch.stop ?? (launch.stop = {});
+    requestImplementStop(launch.child, stop, reason);
+  }
+  await clearAgentQuestions(paths);
   const compiled = await compilePack(paths);
   const previous = await readBuildRun(paths);
   await writeBuildRun(paths, {
@@ -523,6 +596,7 @@ export async function stopImplement(
     adapter: previous?.adapter ?? "cursor",
     at: new Date().toISOString(),
     message: reason,
+    ...(previous?.fromProof ? { fromProof: true } : {}),
   });
   return { result: await compilePack(paths), message: reason };
 }
@@ -577,6 +651,9 @@ export async function writeImproveBrief(
   paths: PackPaths,
   compiled?: CompileResult | null,
 ): Promise<{ result: CompileResult; brief: string }> {
+  if (isOpenQuestions(await readAgentQuestions(paths))) {
+    throw new AgentAnswersError("Answer the agent's questions, or Stop, before starting a new Improve.");
+  }
   const result = compiled ?? (await compilePack(paths));
   assertImproveAllowed(result.health.ready);
   const findings = improveFindings(result.health.ready);
@@ -594,19 +671,86 @@ export async function writeImproveBrief(
 
 export async function launchImprove(
   paths: PackPaths,
-  options: { adapter?: AdapterId } = {},
-): Promise<{ ok: boolean; message: string }> {
+  options: { adapter?: AdapterId; extraPrompt?: string } = {},
+): Promise<LaunchAdapterResult> {
   const repo = await inspectProductRepo(paths.root);
   const adapter = options.adapter ?? (repo.adapterRecorded && adapterLaunchesAgent(repo.adapter) ? repo.adapter : "manual");
   const name = adapterDisplayName(adapter);
+  const prompt = options.extraPrompt
+    ? `${improvePrompt(paths.improveBrief)}\n\n${options.extraPrompt}`
+    : improvePrompt(paths.improveBrief);
   return launchAdapter(adapter, repo.root, paths.improveBrief, {
-    prompt: improvePrompt(paths.improveBrief),
+    prompt,
     openIde: false,
     successMessage:
       adapter === "manual"
         ? "Wrote derived/improve-brief.md. Open it in any coding agent."
         : `Started a ${name} agent. The cockpit will show a diff when the spec changes.`,
   });
+}
+
+export async function answerAgentQuestions(
+  paths: PackPaths,
+  answers: Record<string, string>,
+  options: { adapter?: AdapterId; onLogLine?: (line: string) => void } = {},
+): Promise<{
+  result: CompileResult;
+  message: string;
+  channel: "improve" | "implement";
+  launch?: LaunchAdapterResult;
+}> {
+  const open = await readAgentQuestions(paths);
+  if (!isOpenQuestions(open)) {
+    throw new AgentAnswersError("No open questions to answer.");
+  }
+  const answered = applyAnswers(open, answers);
+  await writeAgentQuestions(paths, answered);
+  const extraPrompt = withOwnerAnswers("", answered).trim();
+  if (answered.channel === "improve") {
+    const launch = await launchImprove(paths, { adapter: options.adapter, extraPrompt });
+    return {
+      result: await compilePack(paths),
+      message: launch.message,
+      channel: "improve",
+      launch: launch.ok && launch.finished ? launch : undefined,
+    };
+  }
+  const previous = await readBuildRun(paths);
+  const launched = await implementPack(paths, {
+    adapter: options.adapter ?? previous?.adapter,
+    fromProof: previous?.fromProof === true,
+    onLogLine: options.onLogLine,
+    resume: true,
+  });
+  return {
+    result: launched.result,
+    message: launched.message,
+    channel: "implement",
+    launch: launched.launch,
+  };
+}
+
+export async function discardAgentQuestions(
+  paths: PackPaths,
+  launch: LaunchAdapterResult | null,
+): Promise<{ result: CompileResult; message: string; channel: "improve" | "implement" }> {
+  const open = await readAgentQuestions(paths);
+  if (!isOpenQuestions(open)) {
+    throw new AgentAnswersError("No open questions to discard.");
+  }
+  if (open.channel === "implement") {
+    const stopped = await stopImplement(paths, launch);
+    return { result: stopped.result, message: stopped.message, channel: "implement" };
+  }
+  await clearAgentQuestions(paths);
+  if (await readImproveSnapshot(paths)) {
+    await rejectImproveReview(paths);
+  }
+  return {
+    result: await compilePack(paths),
+    message: "Discarded the agent's questions.",
+    channel: "improve",
+  };
 }
 
 export async function improvePack(

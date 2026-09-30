@@ -260,6 +260,10 @@ export type BuildRun = {
   pid?: number;
   /** Owner chose Ignore. Prove may run even if state is failed. */
   ignored?: boolean;
+  /** Agent exited to wait for derived/agent-questions.json. Not a health.json key. */
+  waitingOnQuestions?: boolean;
+  /** This run was Fix from proof. Used when resuming after answers. */
+  fromProof?: boolean;
 };
 
 export type ProofState = "not_yet" | "passed" | "failed" | "needs_review" | "stale";

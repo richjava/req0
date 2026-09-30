@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,7 +9,8 @@ import { StackRequiredError } from "./stack.js";
 import { createMockJevClient } from "./jev.js";
 import { ProveLockedError } from "./proof.js";
 import { IgnoreBuildLockedError, specHash } from "./ready.js";
-import { checkPack, compilePack, createPack, deletePack, ignoreBuild, implementPack, improvePack, listPacks, packPaths, provePack, resolveCockpitPack, resolvePack, summarizePacks } from "./pack.js";
+import { AgentAnswersError, AGENT_QUESTIONS_WAITING, applyAnswers, writeAgentQuestions } from "./agent-questions.js";
+import { checkPack, compilePack, createPack, deletePack, finishImplement, ignoreBuild, implementPack, improvePack, listPacks, packPaths, persistDerived, provePack, resolveCockpitPack, resolvePack, shouldRefreshForWatch, summarizePacks, withRememberedAnswers } from "./pack.js";
 import { readReq0Config } from "./stack.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -447,6 +448,112 @@ describe("pack list", () => {
       await deletePack(doomed);
       const left = await listPacks(dir);
       expect(left.map((pack) => pack.id)).toEqual(["keep-pack"]);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+});
+
+const OPEN_QUESTIONS = {
+  version: 1 as const,
+  channel: "implement" as const,
+  status: "open" as const,
+  at: "2026-09-29T10:00:00.000Z",
+  questions: [
+    {
+      id: "q1",
+      prompt: "Which option should we take?",
+      kind: "choice" as const,
+      options: [
+        { id: "a", label: "Option A" },
+        { id: "b", label: "Option B" },
+      ],
+      required: true,
+    },
+  ],
+};
+
+describe("agent questions lifecycle", () => {
+  it("does not stamp Build succeeded when questions are open", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "req0-questions-finish-"));
+    const root = path.join(parent, "docs/requirements/demo-pack");
+    try {
+      const paths = await createPack(root);
+      await writeAgentQuestions(paths, OPEN_QUESTIONS);
+      const done = await finishImplement(
+        paths,
+        { ok: true, message: "agent finished", finished: Promise.resolve({ code: 0 }) },
+        "cursor",
+      );
+      expect(done.message).toBe(AGENT_QUESTIONS_WAITING);
+      expect(done.result.health.build.state).toBe("running");
+      const run = JSON.parse(await readFile(paths.buildRun, "utf8"));
+      expect(run.state).toBe("running");
+      expect(run.waitingOnQuestions).toBe(true);
+      expect(run).not.toHaveProperty("pid");
+      const health = JSON.parse(await readFile(paths.health, "utf8"));
+      expect(health).toMatchObject({ spec: expect.anything(), ready: expect.anything(), build: expect.anything(), proof: expect.anything() });
+      expect(health).not.toHaveProperty("questions");
+      expect(Object.keys(health)).toEqual(expect.arrayContaining(["spec", "ready", "build", "proof"]));
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a new Implement while questions are open", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "req0-questions-refuse-"));
+    const root = path.join(parent, "docs/requirements/demo-pack");
+    try {
+      const paths = await createPack(root);
+      await writeAgentQuestions(paths, OPEN_QUESTIONS);
+      await expect(implementPack(paths, { adapter: "manual" })).rejects.toBeInstanceOf(AgentAnswersError);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps answered questions for later Implement prompts", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "req0-questions-remember-"));
+    const root = path.join(parent, "docs/requirements/demo-pack");
+    try {
+      const paths = await createPack(root);
+      await writeAgentQuestions(paths, applyAnswers(OPEN_QUESTIONS, { q1: "b" }));
+      const prompt = await withRememberedAnswers(paths, "Implement this requirement.");
+      expect(prompt).toContain("Owner answers:");
+      expect(prompt).toContain("Option B");
+      expect(prompt).toContain("Do not ask the same questions again");
+      await writeAgentQuestions(paths, applyAnswers({ ...OPEN_QUESTIONS, channel: "improve" }, { q1: "a" }));
+      expect(await withRememberedAnswers(paths, "Improve this requirement.")).toBe("Improve this requirement.");
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("pack watch and persist", () => {
+  it("refreshes only on pack inputs, not derived writes", () => {
+    const dir = "/repo/docs/requirements";
+    expect(shouldRefreshForWatch(dir, "invoice-approval/requirement.md")).toBe(true);
+    expect(shouldRefreshForWatch(dir, "invoice-approval/fixtures/personas.yaml")).toBe(true);
+    expect(shouldRefreshForWatch(dir, "invoice-approval/fixtures/runtime.yaml")).toBe(true);
+    expect(shouldRefreshForWatch(dir, "invoice-approval/derived/health.json")).toBe(false);
+    expect(shouldRefreshForWatch(dir, "invoice-approval/derived/status.md")).toBe(false);
+    expect(shouldRefreshForWatch(dir, null)).toBe(false);
+    expect(shouldRefreshForWatch("/pack/requirement.md", null)).toBe(true);
+    expect(shouldRefreshForWatch("/pack/fixtures", "personas.yaml")).toBe(true);
+  });
+
+  it("does not rewrite derived files when the bytes are unchanged", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "req0-persist-"));
+    const root = path.join(parent, "docs/requirements/demo-pack");
+    try {
+      const paths = await createPack(root);
+      const first = await stat(paths.health);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const compiled = await compilePack(paths);
+      await persistDerived(paths, compiled);
+      const second = await stat(paths.health);
+      expect(second.mtimeMs).toBe(first.mtimeMs);
     } finally {
       await rm(parent, { recursive: true, force: true });
     }
