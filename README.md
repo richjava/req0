@@ -6,7 +6,7 @@
 
 # Req0
 
-Req0 is a **requirement operating system** for a product git repo. One structured pack drives definition, implementation, and proof — not a ticket, a chat, or a separate test script.
+Req0 allows you to keep structured requirement packs in your product git repo. The same pack drives definition, implementation, and proof — not a ticket, a chat, or a separate test script.
 
 A local **cockpit** runs that loop: a coding agent (Cursor or Copilot) interviews you, drafts frozen-grammar `requirement.md`, and later implements — only after you answer, a compiler checks the grammar, and **Jev** (TypeSafe System One) judges Ready. The browser then proves the app against the spec. If proof fails, **Fix from proof** sends that report back so the same agent can repair the implementation — not the spec.
 
