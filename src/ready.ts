@@ -308,7 +308,7 @@ function goingCopy(health: Health, ready: ReadyMeter): string {
       return proofGoing(health);
     }
     if (health.build.state === "running") {
-      const agent = adapterDisplayName(health.build.adapter === "copilot" ? "copilot" : "cursor");
+      const agent = adapterDisplayName(health.build.adapter ?? "cursor");
       return `${agent} agent is running. Activity shows tools and messages as they happen. Stop ends the run. Build Succeeded is not proof the app boots.`;
     }
     if (health.build.state === "stale") return "Spec changed after the last implement run. Build is stale.";

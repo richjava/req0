@@ -305,14 +305,14 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
         return;
       }
       const body = await readJson(req);
-      const coding = body["coding"];
-      if (coding !== "manual" && coding !== "cursor" && coding !== "copilot") {
-        sendJson(res, { error: "Choose I'll write the code, Cursor, or Copilot." }, 400);
+      const coding = parseAdapterId(body["coding"]);
+      if (!coding) {
+        sendJson(res, { error: "Choose I'll write the code, Cursor, Copilot, Claude, or Codex." }, 400);
         return;
       }
       const stackId = typeof body["stack"] === "string" && body["stack"].trim() ? String(body["stack"]) : undefined;
       if (coding !== "manual" && !stackId && needsStackChoice({ ...repo, implement: true })) {
-        sendJson(res, { error: "Choose a stack for Cursor or Copilot on an empty repo." }, 400);
+        sendJson(res, { error: "Choose a stack for a coding agent on an empty repo." }, 400);
         return;
       }
       try {

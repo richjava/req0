@@ -5,7 +5,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
-import { parseAdapterId } from "./adapter.js";
+import { ADAPTER_IDS, parseAdapterId } from "./adapter.js";
 import { isRequirementId } from "./compile.js";
 import { adapterInstructions, ImplementDisabledError, ImplementLockedError } from "./implement.js";
 import { FixFromProofLockedError } from "./fix-from-proof.js";
@@ -245,11 +245,10 @@ function adapterFromArgs(args: string[]): ReturnType<typeof parseAdapterId> {
   const flagged = flagValue(args, "adapter");
   if (flagged !== undefined) {
     const id = parseAdapterId(flagged);
-    if (!id) throw new Error(`Unknown adapter "${flagged}". Use cursor, copilot, or manual.`);
+    if (!id) throw new Error(`Unknown adapter "${flagged}". Use ${ADAPTER_IDS.join(", ")}.`);
     return id;
   }
-  if (args[0] === "manual" || args[0] === "cursor" || args[0] === "copilot") return args[0];
-  return null;
+  return parseAdapterId(args[0]);
 }
 
 function isFree(port: number): Promise<boolean> {

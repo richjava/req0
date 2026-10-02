@@ -108,6 +108,10 @@ describe("product repo detection", () => {
       expect(after.recorded).toBe(true);
       expect(needsCodingChoice(after)).toBe(false);
       expect(needsStackChoice(after)).toBe(false);
+      await recordProjectSetup(dir, { coding: "claude" });
+      expect((await inspectProductRepo(pack)).adapter).toBe("claude");
+      await recordProjectSetup(dir, { coding: "codex" });
+      expect((await inspectProductRepo(pack)).adapter).toBe("codex");
       await recordProjectSetup(dir, { coding: "manual" });
       const manual = await inspectProductRepo(pack);
       expect(manual.implement).toBe(false);

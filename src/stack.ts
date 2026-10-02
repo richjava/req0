@@ -3,7 +3,7 @@ import path from "node:path";
 import { parseAdapterId } from "./adapter.js";
 import type { AdapterId, ProductRepo, Req0Config, StackChoice } from "./types.js";
 
-export type CodingChoice = "manual" | "cursor" | "copilot";
+export type CodingChoice = AdapterId;
 
 export const REQ0_CONFIG_FILE = "req0.json";
 export const ENV_EXAMPLE_FILE = ".env.example";

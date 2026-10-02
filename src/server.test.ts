@@ -149,6 +149,8 @@ describe("cockpit reload contract", () => {
       expect(html).toContain("stack-gate");
       expect(html).toContain("stack-bar");
       expect(html).toContain("coding-bar");
+      expect(html).toContain("coding-claude");
+      expect(html).toContain("coding-codex");
       const setup = await fetch(`${url}/api/setup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -165,6 +167,14 @@ describe("cockpit reload contract", () => {
       expect((await readReq0Config(parent))?.stack?.id).toBe("amplify-gen2");
       expect(await readFile(path.join(parent, ".env.example"), "utf8")).toContain("AWS_REGION=");
       expect(await readFile(path.join(parent, ".env.example"), "utf8")).not.toContain("AKIA");
+      const claude = await fetch(`${url}/api/setup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ coding: "claude" }),
+      });
+      expect(claude.status).toBe(200);
+      expect((await claude.json()).productRepo.adapter).toBe("claude");
+      expect((await readReq0Config(parent))?.adapter).toBe("claude");
     } finally {
       await rm(parent, { recursive: true, force: true });
     }

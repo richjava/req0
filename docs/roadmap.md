@@ -38,11 +38,11 @@ No API key (`TYPESAFE_API_KEY`) → Ready stays **Not yet**. Persona blockers st
 
 ## Milestone 3 — A coding agent builds from the pack
 
-Portable `implement-brief.md`. Adapters: **Cursor launch**, **Copilot CLI launch**, and **generic manual**. Empty repo = no customer app at repo root (Req0’s own `package.json` does not count). Stack and adapter recorded in `req0.json`. Build Succeeded ≠ app boots.
+Portable `implement-brief.md`. Adapters: **Cursor launch**, **Copilot CLI launch**, **Claude Code CLI launch**, **Codex CLI launch**, and **generic manual**. Empty repo = no customer app at repo root (Req0’s own `package.json` does not count). Stack and adapter recorded in `req0.json`. Build Succeeded ≠ app boots.
 
-Implement stays **locked until Ready is Ready**. When Ready, `req0 implement` and the cockpit **Implement** button start the recorded agent (Cursor or Copilot CLI) in the product repo, with `derived/implement-brief.md` in the prompt. `--adapter=manual` only records the run. Empty repo with no recorded stack refuses Implement until `req0.json`, `--stack=`, or the cockpit records one. `"implement": false` in `req0.json` turns the stage off: no build stamp, Implement hidden, Prove uses Ready + runtime. Build Succeeded is not proof the app boots.
+Implement stays **locked until Ready is Ready**. When Ready, `req0 implement` and the cockpit **Implement** button start the recorded agent (Cursor, Copilot, Claude, or Codex CLI) in the product repo, with `derived/implement-brief.md` in the prompt. `--adapter=manual` only records the run. Empty repo with no recorded stack refuses Implement until `req0.json`, `--stack=`, or the cockpit records one. `"implement": false` in `req0.json` turns the stage off: no build stamp, Implement hidden, Prove uses Ready + runtime. Build Succeeded is not proof the app boots.
 
-**Shipped:** emit `derived/implement-brief.md` on a valid compile, empty-vs-existing product-repo detection, Cursor + Copilot CLI launch + manual skip, `derived/build-run.json`, Implement enabled only after Ready.
+**Shipped:** emit `derived/implement-brief.md` on a valid compile, empty-vs-existing product-repo detection, Cursor + Copilot + Claude + Codex CLI launch + manual skip, `derived/build-run.json`, Implement enabled only after Ready.
 
 ## Milestone 4 — Proof
 
@@ -99,7 +99,7 @@ After each milestone: what shipped vs acceptance, any drift, any fence that shou
 
 ### Milestone 3
 
-Shipped vs acceptance: implement brief, Ready gate, Cursor + Copilot + manual adapters, `build-run.json`, `req0.json` stack and adapter. Fence held: Build Succeeded is not proof the app boots.
+Shipped vs acceptance: implement brief, Ready gate, Cursor + Copilot + Claude + Codex + manual adapters, `build-run.json`, `req0.json` stack and adapter. Fence held: Build Succeeded is not proof the app boots.
 
 Drift (fixed here): architecture still listed Jev and coding agents as unbuilt. Roadmap M2 still said invoice-approval is honestly blocked; a live product pack can be Ready with nits. The golden pack in this repo stays Not yet without `TYPESAFE_API_KEY` — that is a key, not a spec failure. Health files are not copied between Req0 and the product repo.
 

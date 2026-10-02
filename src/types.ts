@@ -213,7 +213,7 @@ export type JevRun = {
   answers: JevAnswer[];
 };
 
-export type AdapterId = "cursor" | "copilot" | "manual";
+export type AdapterId = "cursor" | "copilot" | "claude" | "codex" | "manual";
 
 export type StackChoice = {
   id: string;

@@ -27,7 +27,7 @@ qa-plan.yaml   -->  Playwright + Jev noul        -->  Proof meter + proof-report
 | `req0 compile` | Headless compile; exit 2 on grammar errors |
 | `req0 create [id]` | Write template, personas stub, and a `runtime.yaml` stub if missing |
 | `req0 check` | Run Jev on the frozen catalog. Exit 3 if no API key; exit 2 if Ready is blocked |
-| `req0 implement` | Ready gate (exit 2). On Ready, starts the recorded adapter (Cursor or Copilot CLI) with the implement brief. Activity shows tools and messages. Build stays running until the agent exits, the owner Stops, 3 sandbox deploys, or 20 minutes. `--adapter=cursor\|copilot\|manual` overrides `req0.json`. `--adapter=manual` skips launch. `--stack=` records `nextjs-default` or `amplify-gen2` in `req0.json`. Empty repo with no recorded stack refuses (exit 2). Off when `req0.json` has `"implement": false` |
+| `req0 implement` | Ready gate (exit 2). On Ready, starts the recorded adapter (Cursor, Copilot, Claude, or Codex CLI) with the implement brief. Activity shows tools and messages. Build stays running until the agent exits, the owner Stops, 3 sandbox deploys, or 20 minutes. `--adapter=cursor\|copilot\|claude\|codex\|manual` overrides `req0.json`. `--adapter=manual` skips launch. `--stack=` records `nextjs-default` or `amplify-gen2` in `req0.json`. Empty repo with no recorded stack refuses (exit 2). Off when `req0.json` has `"implement": false` |
 | `req0 prove` | Ready + `fixtures/runtime.yaml` gate (exit 2). Also needs Build succeeded unless implement is off or the owner Ignored a failed Build. Runs compiled `derived/qa-plan.yaml` in a browser |
 
 Pack resolution: current directory if it is `docs/requirements/<id>`, else the only pack under `docs/requirements/`, else the cockpit can create one.
@@ -52,7 +52,7 @@ File watch is best-effort and only on pack inputs (`requirement.md`, `fixtures/p
 ## Layers
 
 - **Jev** — TypeSafe System One. Decision model: `noul`, `choice`, `score` on a `state`. Does not generate text. Authoring catalog frozen in [roadmap.md](roadmap.md). Live coaching needs `TYPESAFE_API_KEY`.
-- **Coding agents** — portable `implement-brief.md` plus Cursor, GitHub Copilot CLI, and generic manual adapters ([src/implement.ts](../src/implement.ts), [src/stack.ts](../src/stack.ts)). The cockpit records the choice in `req0.json`. Default Implement starts `cursor agent` or `copilot -p` with the brief. `--adapter=manual` does not start an agent. The brief lists pack files; Implement writes a `runtime.yaml` stub if missing. Recorded stacks: `nextjs-default` and `amplify-gen2`. Domain model must not require Cursor, Copilot, or AWS.
+- **Coding agents** — portable `implement-brief.md` plus Cursor, GitHub Copilot CLI, Claude Code CLI, Codex CLI, and generic manual adapters ([src/implement.ts](../src/implement.ts), [src/stack.ts](../src/stack.ts)). The cockpit records the choice in `req0.json`. Default Implement starts `cursor agent`, `copilot -p`, `claude -p`, or `codex exec` with the brief. `--adapter=manual` does not start an agent. The brief lists pack files; Implement writes a `runtime.yaml` stub if missing. Recorded stacks: `nextjs-default` and `amplify-gen2`. Domain model must not require Cursor, Copilot, Claude, Codex, or AWS.
 - **Proof** — compiled `qa-plan.yaml`, `fixtures/runtime.yaml`, Playwright driver, deterministic deny UI checks, Jev noul on allow outcomes. In-process observe/act using the existing TypeSafe client. Not a dependency on the `jev-browser` package. Screenshots are Milestone 5.
 
 ## Security baseline (when implementing product apps)

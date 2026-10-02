@@ -67,6 +67,8 @@ describe("implement lock", () => {
   it("describes both adapters", () => {
     expect(adapterInstructions("cursor", "derived/implement-brief.md")).toContain("Cursor");
     expect(adapterInstructions("copilot", "derived/implement-brief.md")).toContain("Copilot");
+    expect(adapterInstructions("claude", "derived/implement-brief.md")).toContain("Claude");
+    expect(adapterInstructions("codex", "derived/implement-brief.md")).toContain("Codex");
     expect(adapterInstructions("manual", "derived/implement-brief.md")).toContain("does not start an agent");
   });
 
@@ -137,6 +139,71 @@ describe("implement lock", () => {
     expect(calls[0]).toContain("json");
     expect(calls[0]?.at(2)).toContain("implement-brief.md");
     expect(calls.some((call) => call[0] === "open")).toBe(false);
+  });
+
+  it("claude adapter starts Claude Code CLI with the brief", async () => {
+    const calls: string[][] = [];
+    const launched = await launchAdapter("claude", "/tmp/invoice-desk", "/tmp/invoice-desk/derived/implement-brief.md", {
+      spawn: fakeSpawn(calls),
+      resolveClaudeBin: () => "/fake/claude",
+      claudeAuthStatus: () => ({ ok: true }),
+      settleMs: 0,
+    });
+    expect(launched.ok).toBe(true);
+    expect(calls[0]?.slice(0, 2)).toEqual(["/fake/claude", "-p"]);
+    expect(calls[0]).toContain("--output-format");
+    expect(calls[0]).toContain("stream-json");
+    expect(calls[0]).toContain("--verbose");
+    expect(calls[0]).toContain("--dangerously-skip-permissions");
+    expect(calls[0]).toContain("--disallowedTools");
+    expect(calls[0]).toContain("AskUserQuestion");
+    expect(calls[0]?.at(2)).toContain("implement-brief.md");
+    expect(calls.some((call) => call[0] === "open")).toBe(false);
+  });
+
+  it("refuses Claude launch when the CLI is missing", async () => {
+    const launched = await launchAdapter("claude", "/tmp/invoice-desk", "/tmp/invoice-desk/derived/implement-brief.md", {
+      resolveClaudeBin: () => null,
+    });
+    expect(launched.ok).toBe(false);
+    expect(launched.message).toContain("CLAUDE_BIN");
+  });
+
+  it("refuses Claude launch when not logged in", async () => {
+    const calls: string[][] = [];
+    const launched = await launchAdapter("claude", "/tmp/invoice-desk", "/tmp/invoice-desk/derived/implement-brief.md", {
+      spawn: fakeSpawn(calls),
+      resolveClaudeBin: () => "/fake/claude",
+      claudeAuthStatus: () => ({ ok: false }),
+      settleMs: 0,
+    });
+    expect(launched.ok).toBe(false);
+    expect(launched.message).toContain('"/fake/claude" auth login');
+    expect(calls).toEqual([]);
+  });
+
+  it("codex adapter starts Codex CLI with the brief", async () => {
+    const calls: string[][] = [];
+    const launched = await launchAdapter("codex", "/tmp/invoice-desk", "/tmp/invoice-desk/derived/implement-brief.md", {
+      spawn: fakeSpawn(calls),
+      resolveCodexBin: () => "/fake/codex",
+      settleMs: 0,
+    });
+    expect(launched.ok).toBe(true);
+    expect(calls[0]?.slice(0, 4)).toEqual(["/fake/codex", "exec", "--json", "--sandbox"]);
+    expect(calls[0]).toContain("workspace-write");
+    expect(calls[0]).not.toContain("--full-auto");
+    expect(calls[0]).not.toContain("--yolo");
+    expect(calls[0]?.at(-1)).toContain("implement-brief.md");
+    expect(calls.some((call) => call[0] === "open")).toBe(false);
+  });
+
+  it("refuses Codex launch when the CLI is missing", async () => {
+    const launched = await launchAdapter("codex", "/tmp/invoice-desk", "/tmp/invoice-desk/derived/implement-brief.md", {
+      resolveCodexBin: () => null,
+    });
+    expect(launched.ok).toBe(false);
+    expect(launched.message).toContain("CODEX_BIN");
   });
 
   it("can start the agent without opening the IDE", async () => {
@@ -244,6 +311,31 @@ describe("implement lock", () => {
     expect(summarizeAgentLine("Connection lost, reconnecting…")).toBe(
       "Connection lost, reconnecting…",
     );
+    expect(
+      summarizeAgentLine(
+        JSON.stringify({
+          type: "item.started",
+          item: { type: "command_execution", command: "npm install" },
+        }),
+      ),
+    ).toBe("Running npm install");
+    expect(
+      summarizeAgentLine(
+        JSON.stringify({
+          type: "item.started",
+          item: { type: "file_change", changes: [{ path: "src/app/page.tsx", kind: "add" }] },
+        }),
+      ),
+    ).toBe("Writing src/app/page.tsx");
+    expect(
+      summarizeAgentLine(
+        JSON.stringify({
+          type: "item.completed",
+          item: { type: "agent_message", text: "Scaffolded the app." },
+        }),
+      ),
+    ).toBe("Agent: Scaffolded the app.");
+    expect(summarizeAgentLine(JSON.stringify({ type: "turn.completed" }))).toBeNull();
     expect(
       summarizeAgentLine(
         JSON.stringify({

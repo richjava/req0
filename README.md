@@ -8,7 +8,7 @@
 
 Req0 allows you to keep structured requirement packs in your product git repo. The same pack drives definition, implementation, and proof — not a ticket, a chat, or a separate test script.
 
-A local **cockpit** runs that loop: a coding agent (Cursor or Copilot) interviews you, drafts frozen-grammar `requirement.md`, and later implements — only after you answer, a compiler checks the grammar, and **Jev** (TypeSafe System One) judges Ready. The browser then proves the app against the spec. If proof fails, **Fix from proof** sends that report back so the same agent can repair the implementation — not the spec.
+A local **cockpit** runs that loop: a coding agent (Cursor, Copilot, Claude, or Codex) interviews you, drafts frozen-grammar `requirement.md`, and later implements — only after you answer, a compiler checks the grammar, and **Jev** (TypeSafe System One) judges Ready. The browser then proves the app against the spec. If proof fails, **Fix from proof** sends that report back so the same agent can repair the implementation — not the spec.
 
 Req0 is a CLI plus a thin HTML cockpit, free and open source. It is not a hosted SaaS.
 
@@ -49,7 +49,7 @@ You can also edit `requirement.md` yourself. Save compiles. Spec Valid means the
 | `req0 create <id>` | Create a pack folder (kebab-case) |
 | `req0 compile` | Compile the pack; exit 2 on grammar errors |
 | `req0 check` | Ask Jev to judge the spec. Needs `TYPESAFE_API_KEY`. Exit 3 if the key is missing; exit 2 if Ready is blocked |
-| `req0 implement` | Launch the recorded coding agent after Ready. `--adapter=cursor\|copilot\|manual`. `--stack=nextjs-default\|amplify-gen2` on an empty repo |
+| `req0 implement` | Launch the recorded coding agent after Ready. `--adapter=cursor\|copilot\|claude\|codex\|manual`. `--stack=nextjs-default\|amplify-gen2` on an empty repo |
 | `req0 prove` | Run compiled browser QA after Ready (and Build, unless Implement is off) |
 
 `req0 compile`, `check`, `implement`, and `prove` resolve a pack from the current directory (a pack folder, or the only pack under `docs/requirements/`). The cockpit does not auto-open a pack from the product root — you pick one from the list.
@@ -69,7 +69,7 @@ docs/requirements/invoice-approval/
   derived/                  # generated; do not hand-edit
 ```
 
-First run in an empty product repo asks how code should be written (**I’ll write the code**, **Cursor**, or **Copilot**) and, if an agent will implement, which stack. That writes `req0.json`. Set `"implement": false` when Req0 should not own Implement.
+First run in an empty product repo asks how code should be written (**I’ll write the code**, **Cursor**, **Copilot**, **Claude**, or **Codex**) and, if an agent will implement, which stack. That writes `req0.json`. Set `"implement": false` when Req0 should not own Implement.
 
 Copy names-only env vars into `.env` as needed. Do not put secrets in `.env.example`.
 
@@ -88,7 +88,7 @@ npx playwright install chromium
 
 ### Implement
 
-Install the agent CLI you recorded: [Cursor](https://cursor.com) agent, or GitHub Copilot CLI. `--adapter=manual` skips launch.
+Install the agent CLI you recorded: [Cursor](https://cursor.com) agent, [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli), [Claude Code](https://code.claude.com/docs/en/cli), or [Codex CLI](https://developers.openai.com/codex/cli/reference). `--adapter=manual` skips launch. Codex runs `codex exec --json --sandbox workspace-write` (not `--full-auto` or `--yolo`). `npm` / `ampx` that need network beyond the workspace may fail until you widen that sandbox.
 
 ## Grammar (short)
 

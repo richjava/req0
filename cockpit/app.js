@@ -70,6 +70,8 @@ const els = {
   codingManual: document.getElementById("coding-manual"),
   codingCursor: document.getElementById("coding-cursor"),
   codingCopilot: document.getElementById("coding-copilot"),
+  codingClaude: document.getElementById("coding-claude"),
+  codingCodex: document.getElementById("coding-codex"),
   cockpitApp: document.getElementById("cockpit-app"),
   workspace: document.getElementById("view-define"),
   workspaceLabel: document.getElementById("workspace-label"),
@@ -196,12 +198,16 @@ let pendingCoding = null;
 function recordedAdapter() {
   const repo = state?.productRepo;
   if (!repo?.implement) return "manual";
-  if (repo.adapter === "copilot" || repo.adapter === "manual") return repo.adapter;
+  if (repo.adapter === "copilot" || repo.adapter === "claude" || repo.adapter === "codex" || repo.adapter === "manual") {
+    return repo.adapter;
+  }
   return "cursor";
 }
 
 function adapterLabel(id) {
   if (id === "copilot") return "Copilot";
+  if (id === "claude") return "Claude";
+  if (id === "codex") return "Codex";
   if (id === "manual") return "Manual";
   return "Cursor";
 }
@@ -220,7 +226,7 @@ function renderSetupGate(snapshot) {
   const showStack = needStack && (!needCoding || Boolean(pendingCoding));
   els.codingSection?.classList.toggle("hidden", !needCoding);
   els.stackSection?.classList.toggle("hidden", !showStack);
-  for (const btn of [els.codingManual, els.codingCursor, els.codingCopilot]) {
+  for (const btn of [els.codingManual, els.codingCursor, els.codingCopilot, els.codingClaude, els.codingCodex]) {
     if (!btn) continue;
     btn.classList.toggle("is-selected", btn.dataset.coding === pendingCoding);
     btn.disabled = false;
@@ -2262,6 +2268,8 @@ async function recordStack(id) {
 els.codingManual?.addEventListener("click", () => void onCodingChoice("manual"));
 els.codingCursor?.addEventListener("click", () => void onCodingChoice("cursor"));
 els.codingCopilot?.addEventListener("click", () => void onCodingChoice("copilot"));
+els.codingClaude?.addEventListener("click", () => void onCodingChoice("claude"));
+els.codingCodex?.addEventListener("click", () => void onCodingChoice("codex"));
 els.stackNextjs?.addEventListener("click", () => void recordStack("nextjs-default"));
 els.stackAmplify?.addEventListener("click", () => void recordStack("amplify-gen2"));
 

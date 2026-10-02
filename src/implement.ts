@@ -42,7 +42,10 @@ export type LaunchAdapterDeps = {
   spawn?: typeof spawn;
   resolveBin?: () => string | null;
   resolveCopilotBin?: () => string | null;
+  resolveClaudeBin?: () => string | null;
+  resolveCodexBin?: () => string | null;
   agentStatus?: (bin: string) => string;
+  claudeAuthStatus?: (bin: string) => { ok: boolean };
   settleMs?: number;
   platform?: NodeJS.Platform;
   prompt?: string;
@@ -73,6 +76,12 @@ export function adapterInstructions(adapter: AdapterId, briefPath: string): stri
   }
   if (adapter === "copilot") {
     return `Copilot adapter: GitHub Copilot CLI starts in the product repo with ${briefPath} in the prompt. Do not invent spec IDs.`;
+  }
+  if (adapter === "claude") {
+    return `Claude adapter: Claude Code CLI starts in the product repo with ${briefPath} in the prompt. Do not invent spec IDs.`;
+  }
+  if (adapter === "codex") {
+    return `Codex adapter: Codex CLI starts in the product repo with ${briefPath} in the prompt. Do not invent spec IDs.`;
   }
   return `Manual adapter: open ${briefPath} in any coding agent and implement from that brief. This path does not start an agent.`;
 }
@@ -139,9 +148,21 @@ export function resolveCursorBin(): string | null {
 }
 
 export function resolveCopilotBin(): string | null {
-  const override = process.env.COPILOT_BIN?.trim();
+  return resolvePathBin("COPILOT_BIN", "copilot");
+}
+
+export function resolveClaudeBin(): string | null {
+  return resolvePathBin("CLAUDE_BIN", "claude");
+}
+
+export function resolveCodexBin(): string | null {
+  return resolvePathBin("CODEX_BIN", "codex");
+}
+
+function resolvePathBin(envName: string, exeBase: string): string | null {
+  const override = process.env[envName]?.trim();
   if (override && existsSync(override)) return override;
-  const exe = process.platform === "win32" ? "copilot.cmd" : "copilot";
+  const exe = process.platform === "win32" ? `${exeBase}.cmd` : exeBase;
   for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
     if (!dir) continue;
     const candidate = path.join(dir, exe);
@@ -153,6 +174,11 @@ export function resolveCopilotBin(): string | null {
 export function cursorAgentStatus(bin: string): string {
   const result = spawnSync(bin, ["agent", "status"], { encoding: "utf8", timeout: 4_000 });
   return `${result.stdout ?? ""}${result.stderr ?? ""}`;
+}
+
+export function claudeAuthStatus(bin: string): { ok: boolean } {
+  const result = spawnSync(bin, ["auth", "status"], { encoding: "utf8", timeout: 4_000 });
+  return { ok: result.status === 0 };
 }
 
 export function assertImplementAllowed(result: CompileResult): void {
@@ -187,6 +213,12 @@ export function launchAdapter(
   }
   if (adapter === "copilot") {
     return spawnCopilotAgent(repoRoot, briefPath, deps);
+  }
+  if (adapter === "claude") {
+    return spawnClaudeAgent(repoRoot, briefPath, deps);
+  }
+  if (adapter === "codex") {
+    return spawnCodexAgent(repoRoot, briefPath, deps);
   }
   const bin = (deps.resolveBin ?? resolveCursorBin)();
   if (!bin) {
@@ -266,23 +298,86 @@ async function spawnCopilotAgent(
     return {
       ok: false,
       message:
-        "GitHub Copilot CLI was not found. Install it, set COPILOT_BIN, or retry with --adapter=cursor or --adapter=manual.",
+        "GitHub Copilot CLI was not found. Install it, set COPILOT_BIN, or retry with --adapter=manual.",
     };
   }
+  return spawnCliAgent(repoRoot, briefPath, deps, {
+    bin,
+    args: copilotArgs(briefPath, deps),
+    cliName: "Copilot",
+    successMessage:
+      "Started GitHub Copilot CLI with the implement brief. Activity shows tools and messages as they happen. Build stays running until the agent exits.",
+  });
+}
+
+async function spawnClaudeAgent(
+  repoRoot: string,
+  briefPath: string,
+  deps: LaunchAdapterDeps,
+): Promise<LaunchAdapterResult> {
+  const bin = (deps.resolveClaudeBin ?? resolveClaudeBin)();
+  if (!bin) {
+    return {
+      ok: false,
+      message: "Claude Code CLI was not found. Install it, set CLAUDE_BIN, or retry with --adapter=manual.",
+    };
+  }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    const status = (deps.claudeAuthStatus ?? claudeAuthStatus)(bin);
+    if (!status.ok) {
+      return {
+        ok: false,
+        message: `Claude Code is not logged in, so nothing was generated. In a terminal run: "${bin}" auth login   then retry Implement.`,
+      };
+    }
+  }
+  return spawnCliAgent(repoRoot, briefPath, deps, {
+    bin,
+    args: claudeArgs(briefPath, deps),
+    cliName: "Claude",
+    successMessage:
+      "Started Claude Code CLI with the implement brief. Activity shows tools and messages as they happen. Build stays running until the agent exits.",
+  });
+}
+
+async function spawnCodexAgent(
+  repoRoot: string,
+  briefPath: string,
+  deps: LaunchAdapterDeps,
+): Promise<LaunchAdapterResult> {
+  const bin = (deps.resolveCodexBin ?? resolveCodexBin)();
+  if (!bin) {
+    return {
+      ok: false,
+      message: "Codex CLI was not found. Install it, set CODEX_BIN, or retry with --adapter=manual.",
+    };
+  }
+  return spawnCliAgent(repoRoot, briefPath, deps, {
+    bin,
+    args: codexArgs(briefPath, deps),
+    cliName: "Codex",
+    successMessage:
+      "Started Codex CLI with the implement brief. Activity shows tools and messages as they happen. Build stays running until the agent exits.",
+  });
+}
+
+async function spawnCliAgent(
+  repoRoot: string,
+  briefPath: string,
+  deps: LaunchAdapterDeps,
+  options: { bin: string; args: string[]; cliName: string; successMessage: string },
+): Promise<LaunchAdapterResult> {
   const run = deps.spawn ?? spawn;
   const logPath = implementLogPath(briefPath, deps.logFile);
-  const agentLaunch = await launchLogged(
-    run,
-    bin,
-    copilotArgs(briefPath, deps),
-    repoRoot,
-    logPath,
-    { ...deps, heartbeatLabel: deps.heartbeatLabel ?? "Copilot agent still running.", cliName: "Copilot" },
-  );
+  const agentLaunch = await launchLogged(run, options.bin, options.args, repoRoot, logPath, {
+    ...deps,
+    heartbeatLabel: deps.heartbeatLabel ?? `${options.cliName} agent still running.`,
+    cliName: options.cliName,
+  });
   if (!agentLaunch.ok) {
     return { ok: false, message: agentLaunch.message, logPath, stop: agentLaunch.stop };
   }
-  const settled = await waitForAgent(agentLaunch.child, deps.settleMs ?? 1500, logPath, bin, "Copilot");
+  const settled = await waitForAgent(agentLaunch.child, deps.settleMs ?? 1500, logPath, options.bin, options.cliName);
   if (!settled.ok) {
     return {
       ...settled,
@@ -294,9 +389,7 @@ async function spawnCopilotAgent(
   }
   return {
     ok: true,
-    message:
-      deps.successMessage ??
-      "Started GitHub Copilot CLI with the implement brief. Activity shows tools and messages as they happen. Build stays running until the agent exits.",
+    message: deps.successMessage ?? options.successMessage,
     child: agentLaunch.child,
     logPath,
     finished: agentLaunch.finished,
@@ -325,6 +418,25 @@ function agentArgs(repoRoot: string, briefPath: string, deps: LaunchAdapterDeps)
 function copilotArgs(briefPath: string, deps: LaunchAdapterDeps): string[] {
   const prompt = deps.prompt ?? implementPrompt(briefPath);
   return ["-p", prompt, "--no-ask-user", "--allow-all", "--output-format", "json"];
+}
+
+function claudeArgs(briefPath: string, deps: LaunchAdapterDeps): string[] {
+  const prompt = deps.prompt ?? implementPrompt(briefPath);
+  return [
+    "-p",
+    prompt,
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--dangerously-skip-permissions",
+    "--disallowedTools",
+    "AskUserQuestion",
+  ];
+}
+
+function codexArgs(briefPath: string, deps: LaunchAdapterDeps): string[] {
+  const prompt = deps.prompt ?? implementPrompt(briefPath);
+  return ["exec", "--json", "--sandbox", "workspace-write", prompt];
 }
 
 function launchDetached(
@@ -578,6 +690,8 @@ export function summarizeAgentLine(line: string): string | null {
   } catch {
     return text.slice(0, 280);
   }
+  const codex = summarizeCodexLine(event);
+  if (codex !== undefined) return codex;
   const copilot = summarizeCopilotLine(event);
   if (copilot !== undefined) return copilot;
   if (event.type === "system" && event.subtype === "init") {
@@ -603,10 +717,58 @@ export function summarizeAgentLine(line: string): string | null {
   return null;
 }
 
+function summarizeCodexLine(event: Record<string, unknown>): string | null | undefined {
+  const type = typeof event.type === "string" ? event.type : "";
+  const isCodex =
+    type.startsWith("item.") ||
+    type.startsWith("turn.") ||
+    type.startsWith("thread.") ||
+    type === "event_msg";
+  if (!isCodex) return undefined;
+  if (type === "turn.started" || type === "thread.started" || type === "turn.completed") return null;
+  const item =
+    event.item && typeof event.item === "object" ? (event.item as Record<string, unknown>) : undefined;
+  if (item) {
+    const kind = typeof item.type === "string" ? item.type : "";
+    if (kind === "command_execution" || kind === "command") {
+      if (type.endsWith(".completed")) return null;
+      const command = String(item.command ?? item.cmd ?? item.aggregated_output ?? "").trim();
+      return command ? clip(`Running ${command}`, 280) : clip("Running a command", 280);
+    }
+    if (kind === "file_change" || kind === "file_change_item") {
+      if (type.endsWith(".completed")) return null;
+      const changes = Array.isArray(item.changes) ? item.changes : [];
+      const first = changes[0] && typeof changes[0] === "object" ? (changes[0] as Record<string, unknown>) : undefined;
+      const file = String(first?.path ?? item.path ?? "").trim();
+      return file ? clip(`Writing ${file}`, 280) : clip("Writing files", 280);
+    }
+    if (kind === "agent_message" || kind === "message") {
+      const body = String(item.text ?? item.content ?? "").trim();
+      return body ? clip(`Agent: ${body}`, 280) : null;
+    }
+    if (kind.includes("mcp") || kind.includes("tool")) {
+      const name = String(item.name ?? item.tool ?? kind);
+      return clip(`Using ${name}`, 280);
+    }
+  }
+  if (type === "error" || type.endsWith(".failed")) {
+    const message = event.message ?? event.error ?? item?.error;
+    return clip(`Codex error: ${String(message ?? "unknown")}`, 280);
+  }
+  return null;
+}
+
 function summarizeCopilotLine(event: Record<string, unknown>): string | null | undefined {
   const type = typeof event.type === "string" ? event.type : "";
   const isCopilot =
-    type.includes(".") || type === "tool_use" || type === "tool_result" || type === "message";
+    type === "tool.execution_start" ||
+    type === "tool.execution_complete" ||
+    type === "tool_use" ||
+    type === "tool_result" ||
+    type === "user.message" ||
+    type === "assistant.message" ||
+    type === "session.error" ||
+    type === "message";
   if (!isCopilot) return undefined;
   const data =
     event.data && typeof event.data === "object" ? (event.data as Record<string, unknown>) : event;
@@ -617,7 +779,7 @@ function summarizeCopilotLine(event: Record<string, unknown>): string | null | u
     const args = (data.arguments ?? data.input ?? event.input) as Record<string, unknown> | undefined;
     return summarizeCopilotTool(name, args);
   }
-  if (type === "assistant.message" || type === "assistant" || type === "message") {
+  if (type === "assistant.message" || type === "message") {
     const requests = data.toolRequests;
     if (Array.isArray(requests) && requests[0] && typeof requests[0] === "object") {
       const req = requests[0] as { name?: string; arguments?: Record<string, unknown> };
@@ -734,7 +896,11 @@ async function waitForAgent(
   const loginHint =
     agentName === "Copilot"
       ? `If you are not logged in, run: "${bin}" /login`
-      : `If you are not logged in, run: "${bin}" agent login`;
+      : agentName === "Claude"
+        ? `If you are not logged in, run: "${bin}" auth login`
+        : agentName === "Codex"
+          ? `If you are not logged in, run: "${bin}" login`
+          : `If you are not logged in, run: "${bin}" agent login`;
   return {
     ok: false,
     message: tail

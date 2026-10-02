@@ -247,7 +247,7 @@ export function computeStages(health: Health, ready: ReadyMeter): StageBoard {
   const implementOwned = health.build.owned !== false;
   const neverSucceeded = health.build.state === "not_yet" || health.build.state === "failed";
   const needsStack = health.build.needsStack === true;
-  const agent = adapterDisplayName(health.build.adapter === "copilot" ? "copilot" : "cursor");
+  const agent = adapterDisplayName(health.build.adapter ?? "cursor");
   const buildAction: StageAction = implementOwned
     ? {
         id: "implement",
