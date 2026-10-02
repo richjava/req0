@@ -1,0 +1,127 @@
+{
+  "requirementId": "invoice-approval",
+  "spec": {
+    "state": "valid",
+    "findings": []
+  },
+  "ready": {
+    "state": "ready",
+    "reason": "passed",
+    "blockers": 0,
+    "nits": 8,
+    "nextId": "UC-001",
+    "packNoul": 0.79,
+    "jevCurrent": true,
+    "findings": [
+      {
+        "id": "ready.contradict.UC-001",
+        "kind": "uncertain",
+        "severity": "nit",
+        "message": "UC-001 may contradict the matrix (noul 0.18).",
+        "specId": "UC-001",
+        "line": 55,
+        "noul": 0.18
+      },
+      {
+        "id": "ready.contradict.UC-002",
+        "kind": "uncertain",
+        "severity": "nit",
+        "message": "UC-002 may contradict the matrix (noul 0.18).",
+        "specId": "UC-002",
+        "line": 66,
+        "noul": 0.18
+      },
+      {
+        "id": "ready.contradict.UC-003",
+        "kind": "uncertain",
+        "severity": "nit",
+        "message": "UC-003 may contradict the matrix (noul 0.17).",
+        "specId": "UC-003",
+        "line": 77,
+        "noul": 0.17
+      },
+      {
+        "id": "ready.contradict.UC-004",
+        "kind": "uncertain",
+        "severity": "nit",
+        "message": "UC-004 may contradict the matrix (noul 0.18).",
+        "specId": "UC-004",
+        "line": 88,
+        "noul": 0.18
+      },
+      {
+        "id": "ready.contradict.UC-005",
+        "kind": "uncertain",
+        "severity": "nit",
+        "message": "UC-005 may contradict the matrix (noul 0.18).",
+        "specId": "UC-005",
+        "line": 99,
+        "noul": 0.18
+      },
+      {
+        "id": "ready.section.section.score.business-rules",
+        "kind": "section_score",
+        "severity": "nit",
+        "message": "Business Rules is only partial for a coding agent.",
+        "specId": "Business Rules"
+      },
+      {
+        "id": "ready.section.section.score.use-cases",
+        "kind": "section_score",
+        "severity": "nit",
+        "message": "Use Cases is only partial for a coding agent.",
+        "specId": "Use Cases"
+      },
+      {
+        "id": "ready.section.section.score.roles-permissions",
+        "kind": "section_score",
+        "severity": "nit",
+        "message": "Roles & Permissions is only partial for a coding agent.",
+        "specId": "Roles & Permissions"
+      }
+    ]
+  },
+  "build": {
+    "state": "failed",
+    "adapter": "cursor",
+    "message": "Owner stopped Implement.",
+    "needsStack": false
+  },
+  "proof": {
+    "state": "not_yet",
+    "runtime": true,
+    "findings": []
+  },
+  "nextAction": {
+    "id": "implement",
+    "label": "Implement",
+    "enabled": true,
+    "hint": "Owner stopped Implement."
+  },
+  "stages": {
+    "ready": {
+      "id": "improve",
+      "label": "Improve it",
+      "enabled": false
+    },
+    "build": {
+      "id": "implement",
+      "label": "Implement",
+      "enabled": true,
+      "hint": "Owner stopped Implement."
+    },
+    "proof": {
+      "id": "prove",
+      "label": "Prove",
+      "enabled": false,
+      "hint": "Prove is locked until Build succeeded, or you Ignore a failed Build."
+    },
+    "ignoreBuild": {
+      "id": "ignore-build",
+      "label": "Ignore",
+      "enabled": true,
+      "hint": "Unlock Prove. You will be asked whether implementation succeeded."
+    }
+  },
+  "howThisIsGoing": "Ready. Zero blockers, 8 nits. Implementation is next."
+}
