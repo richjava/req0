@@ -62,6 +62,38 @@ describe("agent questions", () => {
     expect(withOwnerAnswers("Implement this requirement.", answered)).toContain("Owner answers:");
   });
 
+  it("accepts skip, skip-all, custom choice, artifact, and author channel", () => {
+    const skipped = applyAnswers(openRound, { q1: "__skip__" });
+    expect(skipped.questions[0]?.answer).toEqual({ skipped: true });
+    expect(formatOwnerAnswers(skipped)).toContain("Skipped");
+    const skipAll = applyAnswers(openRound, {}, { skipAll: true });
+    expect(skipAll.questions.every((question) => question.answer?.skipped)).toBe(true);
+    const customRound = {
+      ...openRound,
+      questions: [{ ...openRound.questions[0]!, allowCustom: true }, openRound.questions[1]!],
+    };
+    const custom = applyAnswers(customRound, { q1: "S3 with a lock" });
+    expect(custom.questions[0]?.answer).toEqual({ text: "S3 with a lock" });
+    const artifact = parseAgentQuestions({
+      version: 1,
+      channel: "author",
+      status: "open",
+      at: "2026-09-29T10:00:00.000Z",
+      questions: [
+        {
+          id: "shot",
+          prompt: "Upload the screen",
+          kind: "artifact",
+          required: false,
+        },
+      ],
+    });
+    expect(artifact?.channel).toBe("author");
+    const uploaded = applyAnswers(artifact!, { shot: "approval.png" });
+    expect(uploaded.questions[0]?.answer).toEqual({ artifact: "approval.png" });
+    expect(formatOwnerAnswers(uploaded)).toContain("context/approval.png");
+  });
+
   it("overlays Continue without adding a health.json key", () => {
     const health: Health = {
       requirementId: "invoice-approval",

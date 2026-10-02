@@ -56,6 +56,28 @@ import {
   writeReq0Config,
 } from "./stack.js";
 import { loadStarterRequirement, PERSONAS_STUB, RUNTIME_STUB } from "./template.js";
+import {
+  authorPrompt,
+  authorQualityTarget,
+  AuthorLockedError,
+  AUTHOR_AGENT_LOG,
+  AUTHOR_BRIEF_FILE,
+  AUTHOR_RUN_FILE,
+  AUTHOR_STOPPED,
+  emitAuthorBrief,
+  isAuthorActive,
+  listContextFiles,
+  listProductLayout,
+  nextAuthorStep,
+  productBriefBits,
+  readAuthorRun,
+  seedAuthorMarkdown,
+  summarizeRequirementMarkdown,
+  writeAuthorArtifact,
+  writeAuthorRun,
+  type AuthorRun,
+  type AuthorStep,
+} from "./author.js";
 import type { AdapterId, BuildRun, CompileResult, Health, JevRun, PackListItem, ProgressFn, ProofRun, SpecAst } from "./types.js";
 import {
   AGENT_QUESTIONS_WAITING,
@@ -95,6 +117,9 @@ export type PackPaths = {
   proofReport: string;
   proveLog: string;
   agentQuestions: string;
+  context: string;
+  authorBrief: string;
+  authorRun: string;
 };
 
 export function packPaths(root: string): PackPaths {
@@ -123,6 +148,9 @@ export function packPaths(root: string): PackPaths {
     proofReport: path.join(derived, "proof-report.md"),
     proveLog: path.join(derived, "prove-run.log"),
     agentQuestions: path.join(derived, "agent-questions.json"),
+    context: path.join(root, "context"),
+    authorBrief: path.join(derived, AUTHOR_BRIEF_FILE),
+    authorRun: path.join(derived, AUTHOR_RUN_FILE),
   };
 }
 
@@ -363,6 +391,9 @@ export function isPackWatchInput(filename: string): boolean {
   const relative = filename.replaceAll("\\", "/").replace(/^\.\//, "");
   if (!relative || relative.split("/").includes("derived")) return false;
   const base = path.posix.basename(relative);
+  if (relative.split("/").includes("context")) {
+    return /\.(png|jpe?g|webp)$/i.test(base);
+  }
   return base === REQUIREMENT_FILE || base === path.posix.basename(PERSONAS_FILE) || base === path.posix.basename(RUNTIME_FILE);
 }
 
@@ -689,23 +720,253 @@ export async function launchImprove(
   });
 }
 
-export async function answerAgentQuestions(
+export async function writeAuthorBrief(
   paths: PackPaths,
-  answers: Record<string, string>,
+  compiled: CompileResult,
+  run: AuthorRun,
+): Promise<string> {
+  const repo = await inspectProductRepo(paths.root);
+  const brief = emitAuthorBrief({
+    id: paths.id,
+    description: run.description,
+    qualityTarget: run.qualityTarget,
+    round: run.round,
+    markdown: compiled.markdown,
+    compileFindings: compiled.health.spec.findings,
+    spec: compiled.spec,
+    ready: compiled.spec && compiled.health.spec.state === "valid" ? compiled.health.ready : null,
+    siblings: await siblingSummaries(paths),
+    product: productBriefBits(repo, await listProductLayout(repo.root)),
+    contextFiles: await listContextFiles(paths),
+  });
+  await mkdir(paths.derived, { recursive: true });
+  await writeFile(paths.authorBrief, brief, "utf8");
+  return brief;
+}
+
+export async function launchAuthor(
+  paths: PackPaths,
+  options: { adapter?: AdapterId; extraPrompt?: string; onLogLine?: (line: string) => void } = {},
+): Promise<LaunchAdapterResult> {
+  const repo = await inspectProductRepo(paths.root);
+  const adapter = options.adapter ?? (repo.adapterRecorded && adapterLaunchesAgent(repo.adapter) ? repo.adapter : "manual");
+  const name = adapterDisplayName(adapter);
+  const prompt = options.extraPrompt
+    ? `${authorPrompt(paths.authorBrief)}\n\n${options.extraPrompt}`
+    : authorPrompt(paths.authorBrief);
+  return launchAdapter(adapter, repo.root, paths.authorBrief, {
+    prompt,
+    openIde: false,
+    logFile: AUTHOR_AGENT_LOG,
+    heartbeatLabel: "Authoring",
+    onLogLine: options.onLogLine,
+    successMessage:
+      adapter === "manual"
+        ? "Wrote derived/author-brief.md. Open it in any coding agent."
+        : `Started a ${name} agent to draft requirement.md.`,
+  });
+}
+
+export async function startAuthor(
+  paths: PackPaths,
+  description: string,
   options: { adapter?: AdapterId; onLogLine?: (line: string) => void } = {},
 ): Promise<{
   result: CompileResult;
+  run: AuthorRun;
   message: string;
-  channel: "improve" | "implement";
+  launch?: LaunchAdapterResult;
+}> {
+  const trimmed = description.trim();
+  if (!trimmed) throw new AuthorLockedError("Describe the requirement first.");
+  if (isAuthorActive(await readAuthorRun(paths))) {
+    throw new AuthorLockedError();
+  }
+  const open = await readAgentQuestions(paths);
+  if (isOpenQuestions(open) && open.channel !== "author") {
+    throw new AgentAnswersError("Answer the agent's questions, or Stop, before authoring.");
+  }
+  await writeFile(paths.requirement, seedAuthorMarkdown(paths.id, trimmed, await readMarkdown(paths)), "utf8");
+  const compiled = await compilePack(paths);
+  const run: AuthorRun = {
+    version: 1,
+    status: "running",
+    qualityTarget: authorQualityTarget(hasJevAccess()),
+    description: trimmed,
+    round: 1,
+    at: new Date().toISOString(),
+    message: "Authoring this requirement.",
+  };
+  await writeAuthorRun(paths, run);
+  await writeAuthorBrief(paths, compiled, run);
+  const launch = await launchAuthor(paths, { adapter: options.adapter, onLogLine: options.onLogLine });
+  if (!launch.ok || !launch.finished) {
+    const next: AuthorRun = {
+      ...run,
+      status: launch.ok ? "stopped" : "stopped",
+      message: launch.message,
+    };
+    await writeAuthorRun(paths, next);
+    return { result: await compilePack(paths), run: next, message: launch.message, launch };
+  }
+  return { result: compiled, run, message: launch.message, launch };
+}
+
+export async function resumeAuthor(
+  paths: PackPaths,
+  options: { adapter?: AdapterId; extraPrompt?: string; onLogLine?: (line: string) => void } = {},
+): Promise<{
+  result: CompileResult;
+  run: AuthorRun;
+  message: string;
+  launch?: LaunchAdapterResult;
+}> {
+  const current = await readAuthorRun(paths);
+  if (!current) throw new AuthorLockedError("No authoring run to continue.");
+  const compiled = await compilePack(paths);
+  const run: AuthorRun = {
+    ...current,
+    status: "running",
+    at: new Date().toISOString(),
+    message: `Authoring round ${current.round}.`,
+  };
+  await writeAuthorRun(paths, run);
+  await writeAuthorBrief(paths, compiled, run);
+  const launch = await launchAuthor(paths, options);
+  if (!launch.ok || !launch.finished) {
+    const next: AuthorRun = { ...run, status: "stopped", message: launch.message };
+    await writeAuthorRun(paths, next);
+    return { result: await compilePack(paths), run: next, message: launch.message, launch };
+  }
+  return { result: compiled, run, message: launch.message, launch };
+}
+
+export async function settleAuthor(
+  paths: PackPaths,
+  launch: LaunchAdapterResult,
+): Promise<{ action: AuthorStep["action"]; run: AuthorRun; result: CompileResult; message: string }> {
+  if (launch.finished) await launch.finished;
+  const compiled = await compilePack(paths);
+  const current = await readAuthorRun(paths);
+  if (!current) {
+    return {
+      action: "done",
+      run: {
+        version: 1,
+        status: "done",
+        qualityTarget: authorQualityTarget(hasJevAccess()),
+        description: "",
+        round: 1,
+        at: new Date().toISOString(),
+        message: "Authoring is done.",
+      },
+      result: compiled,
+      message: "Authoring is done.",
+    };
+  }
+  const questions = await readAgentQuestions(paths);
+  const openAuthor = isOpenQuestions(questions) && questions.channel === "author";
+  let step = nextAuthorStep({
+    run: current,
+    specState: compiled.health.spec.state,
+    readyState: compiled.health.ready.state,
+    jevCurrent: compiled.health.ready.jevCurrent === true,
+    openQuestions: openAuthor,
+    hasApiKey: hasJevAccess(),
+  });
+  let result = compiled;
+  if (step.action === "check") {
+    await writeAuthorRun(paths, step.run);
+    try {
+      result = await checkPack(paths);
+    } catch {
+      result = await compilePack(paths);
+    }
+    step = nextAuthorStep({
+      run: step.run,
+      specState: result.health.spec.state,
+      readyState: result.health.ready.state,
+      jevCurrent: result.health.ready.jevCurrent === true,
+      openQuestions: false,
+      hasApiKey: hasJevAccess(),
+      justChecked: true,
+    });
+  }
+  await writeAuthorRun(paths, step.run);
+  if (step.action === "relaunch") {
+    result = await compilePack(paths);
+    await writeAuthorBrief(paths, result, step.run);
+  }
+  return { action: step.action, run: step.run, result, message: step.message };
+}
+
+export async function stopAuthor(
+  paths: PackPaths,
+  launch: LaunchAdapterResult | null,
+  reason = AUTHOR_STOPPED,
+): Promise<{ result: CompileResult; message: string; run: AuthorRun | null }> {
+  if (launch?.child || launch?.finished) {
+    const stop = launch.stop ?? (launch.stop = {});
+    requestImplementStop(launch.child, stop, reason);
+  }
+  await clearAgentQuestions(paths);
+  const current = await readAuthorRun(paths);
+  const run: AuthorRun | null = current
+    ? { ...current, status: "stopped", at: new Date().toISOString(), message: reason }
+    : null;
+  if (run) await writeAuthorRun(paths, run);
+  return { result: await compilePack(paths), message: reason, run };
+}
+
+export async function saveAuthorArtifact(
+  paths: PackPaths,
+  filename: string,
+  mime: string,
+  data: string,
+): Promise<string> {
+  return writeAuthorArtifact(paths, filename, mime, data);
+}
+
+async function siblingSummaries(paths: PackPaths): Promise<ReturnType<typeof summarizeRequirementMarkdown>[]> {
+  const dir = await findRequirementsDir(paths.root);
+  if (!dir) return [];
+  const packs = await listPacks(dir);
+  const summaries = [];
+  for (const pack of packs) {
+    if (pack.id === paths.id) continue;
+    summaries.push(summarizeRequirementMarkdown(pack.id, await readMarkdown(pack)));
+  }
+  return summaries;
+}
+
+export { readAuthorRun, AuthorLockedError };
+
+export async function answerAgentQuestions(
+  paths: PackPaths,
+  answers: Record<string, string>,
+  options: { adapter?: AdapterId; onLogLine?: (line: string) => void; skipAll?: boolean } = {},
+): Promise<{
+  result: CompileResult;
+  message: string;
+  channel: "author" | "improve" | "implement";
   launch?: LaunchAdapterResult;
 }> {
   const open = await readAgentQuestions(paths);
   if (!isOpenQuestions(open)) {
     throw new AgentAnswersError("No open questions to answer.");
   }
-  const answered = applyAnswers(open, answers);
+  const answered = applyAnswers(open, answers, { skipAll: options.skipAll === true });
   await writeAgentQuestions(paths, answered);
   const extraPrompt = withOwnerAnswers("", answered).trim();
+  if (answered.channel === "author") {
+    const launched = await resumeAuthor(paths, { adapter: options.adapter, extraPrompt, onLogLine: options.onLogLine });
+    return {
+      result: launched.result,
+      message: launched.message,
+      channel: "author",
+      launch: launched.launch,
+    };
+  }
   if (answered.channel === "improve") {
     const launch = await launchImprove(paths, { adapter: options.adapter, extraPrompt });
     return {
@@ -733,7 +994,7 @@ export async function answerAgentQuestions(
 export async function discardAgentQuestions(
   paths: PackPaths,
   launch: LaunchAdapterResult | null,
-): Promise<{ result: CompileResult; message: string; channel: "improve" | "implement" }> {
+): Promise<{ result: CompileResult; message: string; channel: "author" | "improve" | "implement" }> {
   const open = await readAgentQuestions(paths);
   if (!isOpenQuestions(open)) {
     throw new AgentAnswersError("No open questions to discard.");
@@ -741,6 +1002,10 @@ export async function discardAgentQuestions(
   if (open.channel === "implement") {
     const stopped = await stopImplement(paths, launch);
     return { result: stopped.result, message: stopped.message, channel: "implement" };
+  }
+  if (open.channel === "author") {
+    const stopped = await stopAuthor(paths, launch);
+    return { result: stopped.result, message: stopped.message, channel: "author" };
   }
   await clearAgentQuestions(paths);
   if (await readImproveSnapshot(paths)) {

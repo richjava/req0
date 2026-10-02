@@ -112,13 +112,30 @@
                   <button type="button" class="btn-primary cta" id="review-accept" disabled>Accept</button>
                 </div>
                 <div class="review-actions hidden" id="question-actions">
+                  <button type="button" class="btn-secondary cta" id="question-skip-all">Skip all</button>
                   <button type="button" class="btn-secondary cta" id="question-stop">Stop</button>
                   <button type="button" class="btn-primary cta" id="question-continue" disabled>Continue</button>
                 </div>
               </div>
+              <div class="author-describe hidden" id="author-describe" hidden>
+                <label class="field">
+                  What should this requirement cover?
+                  <textarea class="input" id="author-description" rows="5" placeholder="A short description is enough. The agent will ask questions to fill the rest."></textarea>
+                </label>
+                <button type="button" class="btn-primary cta" id="author-start">Start</button>
+              </div>
+              <div class="qa-tab-bar hidden" id="define-tabs" role="tablist" hidden>
+                <button type="button" class="qa-tab is-active" role="tab" id="define-tab-questions" aria-selected="true" aria-controls="define-questions">
+                  Questions
+                </button>
+                <button type="button" class="qa-tab" role="tab" id="define-tab-activity" aria-selected="false" aria-controls="define-activity">
+                  Activity
+                </button>
+              </div>
+              <div class="question-panel hidden" id="define-questions" hidden></div>
+              <ul class="activity-log list-rows hidden" id="define-activity" hidden></ul>
               <div id="editor" class="markdown-editor" aria-label="requirement.md"></div>
               <div class="review-diff hidden" id="review-diff" hidden></div>
-              <div class="question-panel hidden" id="define-questions" hidden></div>
               <p class="save-state" id="save-state"></p>
             </section>
 

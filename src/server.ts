@@ -3,9 +3,10 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasJevAccess, JevRequestError, JevUnavailableError } from "./jev.js";
-import { implementPack, finishImplement, ignoreBuild, launchImprove, stopImplement, StopImplementLockedError, writeImproveBrief, checkPack, compilePack, createPack, deletePack, findRequirementsDir, listPacks, provePack, summarizePacks, writeRequirement, answerAgentQuestions, discardAgentQuestions } from "./pack.js";
+import { implementPack, finishImplement, ignoreBuild, launchImprove, stopImplement, StopImplementLockedError, writeImproveBrief, checkPack, compilePack, createPack, deletePack, findRequirementsDir, listPacks, provePack, summarizePacks, writeRequirement, answerAgentQuestions, discardAgentQuestions, startAuthor, settleAuthor, launchAuthor, stopAuthor, saveAuthorArtifact, readAuthorRun } from "./pack.js";
 import { IgnoreBuildLockedError } from "./ready.js";
 import { ImproveLockedError } from "./improve.js";
+import { applyAuthorGate, AuthorArtifactError, AuthorLockedError } from "./author.js";
 import {
   acceptImproveReview,
   applyImproveReviewGate,
@@ -36,12 +37,24 @@ export type AppState = {
   last: CompileResult | null;
   implementActivity: ActivityLine[];
   proveActivity: ActivityLine[];
-  busy: "prove" | "improve" | "implement" | null;
+  authorActivity: ActivityLine[];
+  busy: "prove" | "improve" | "implement" | "author" | null;
   implementLaunch: LaunchAdapterResult | null;
+  authorLaunch: LaunchAdapterResult | null;
 };
 
 export function createAppState(cwd: string, pack: PackPaths | null): AppState {
-  return { cwd, pack, last: null, implementActivity: [], proveActivity: [], busy: null, implementLaunch: null };
+  return {
+    cwd,
+    pack,
+    last: null,
+    implementActivity: [],
+    proveActivity: [],
+    authorActivity: [],
+    busy: null,
+    implementLaunch: null,
+    authorLaunch: null,
+  };
 }
 
 export async function refresh(state: AppState): Promise<CompileResult | null> {
@@ -445,11 +458,15 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
       for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
         answers[id] = String(value ?? "");
       }
+      const skipAll = body["skipAll"] === true;
       const adapter = parseAdapterId(body["adapter"]) ?? "cursor";
       try {
+        const round = await readAgentQuestions(state.pack);
+        const logChannel: ActivityChannel = round?.channel === "author" ? "author" : "implement";
         const answered = await answerAgentQuestions(state.pack, answers, {
           adapter,
-          onLogLine: (line) => pushActivity(state, line),
+          skipAll,
+          onLogLine: (line) => pushActivity(state, line, "info", logChannel),
         });
         state.last = answered.result;
         const summary = Object.entries(answers)
@@ -458,12 +475,15 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
           .join("; ");
         pushActivity(
           state,
-          summary ? `Owner answered. ${summary}` : "Owner answered. Continuing.",
+          summary ? `Owner answered. ${summary}` : skipAll ? "Owner skipped this round." : "Owner answered. Continuing.",
           "ok",
+          answered.channel === "author" ? "author" : "implement",
         );
         if (answered.launch?.finished) {
-          state.busy = answered.channel === "improve" ? "improve" : "implement";
+          state.busy =
+            answered.channel === "author" ? "author" : answered.channel === "improve" ? "improve" : "implement";
           if (answered.channel === "implement") state.implementLaunch = answered.launch;
+          if (answered.channel === "author") state.authorLaunch = answered.launch;
           await yieldEventLoop();
           await sendJson(res, {
             ...(await snapshot(state)),
@@ -472,6 +492,8 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
           });
           if (answered.channel === "implement") {
             void runImplement(state, state.pack, answered.launch, adapter);
+          } else if (answered.channel === "author") {
+            void runAuthor(state, state.pack, answered.launch, adapter);
           } else {
             void runImproveWait(state, answered.launch);
           }
@@ -497,11 +519,20 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
         return;
       }
       try {
-        const discarded = await discardAgentQuestions(state.pack, state.implementLaunch);
+        const discarded = await discardAgentQuestions(
+          state.pack,
+          discardedLaunch(state, (await readAgentQuestions(state.pack))?.channel),
+        );
         state.last = discarded.result;
         state.busy = null;
-        state.implementLaunch = null;
-        pushActivity(state, discarded.message, "ok");
+        if (discarded.channel === "implement") state.implementLaunch = null;
+        if (discarded.channel === "author") state.authorLaunch = null;
+        pushActivity(
+          state,
+          discarded.message,
+          "ok",
+          discarded.channel === "author" ? "author" : "implement",
+        );
         await sendJson(res, { ...(await snapshot(state)), message: discarded.message });
       } catch (err) {
         sendJson(
@@ -532,6 +563,103 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
       await yieldEventLoop();
       await sendJson(res, { ...(await snapshot(state)), started: true, message: "Prove started." });
       void runProve(state, pack);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/author/start") {
+      if (!state.pack) {
+        sendJson(res, { error: "No pack selected." }, 400);
+        return;
+      }
+      if (state.busy) {
+        sendJson(res, { ...(await snapshot(state)), error: "Another action is already running." }, 409);
+        return;
+      }
+      const body = await readJson(req);
+      const description = String(body["description"] ?? "").trim();
+      const adapter = parseAdapterId(body["adapter"]) ?? "cursor";
+      try {
+        clearActivity(state, "author");
+        const started = await startAuthor(state.pack, description, {
+          adapter,
+          onLogLine: (line) => pushActivity(state, line, "info", "author"),
+        });
+        state.last = started.result;
+        pushActivity(state, started.message, started.launch?.ok === false ? "error" : "ok", "author");
+        if (started.launch?.finished) {
+          state.busy = "author";
+          state.authorLaunch = started.launch;
+          await yieldEventLoop();
+          await sendJson(res, {
+            ...(await snapshot(state)),
+            started: true,
+            message: started.message,
+          });
+          void runAuthor(state, state.pack, started.launch, adapter);
+          return;
+        }
+        await sendJson(res, { ...(await snapshot(state)), message: started.message });
+      } catch (err) {
+        sendJson(
+          res,
+          {
+            ...(await snapshot(state)),
+            error: err instanceof Error ? err.message : "Could not start authoring.",
+          },
+          err instanceof AuthorLockedError || err instanceof AgentAnswersError ? 409 : 500,
+        );
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/author/stop") {
+      if (!state.pack) {
+        sendJson(res, { error: "No pack selected." }, 400);
+        return;
+      }
+      try {
+        const stopped = await stopAuthor(state.pack, state.authorLaunch);
+        state.last = stopped.result;
+        state.busy = null;
+        state.authorLaunch = null;
+        pushActivity(state, stopped.message, "ok", "author");
+        await sendJson(res, { ...(await snapshot(state)), message: stopped.message });
+      } catch (err) {
+        sendJson(
+          res,
+          {
+            ...(await snapshot(state)),
+            error: err instanceof Error ? err.message : "Could not stop authoring.",
+          },
+          500,
+        );
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/author/artifact") {
+      if (!state.pack) {
+        sendJson(res, { error: "No pack selected." }, 400);
+        return;
+      }
+      const body = await readJson(req);
+      const filename = String(body["filename"] ?? "");
+      const mime = String(body["mime"] ?? "");
+      const data = String(body["data"] ?? "");
+      try {
+        const saved = await saveAuthorArtifact(state.pack, filename, mime, data);
+        pushActivity(state, `Saved context/${saved}.`, "ok", "author");
+        await sendJson(res, { ...(await snapshot(state)), filename: saved, message: `Saved context/${saved}.` });
+      } catch (err) {
+        sendJson(
+          res,
+          {
+            ...(await snapshot(state)),
+            error: err instanceof Error ? err.message : "Could not save the upload.",
+          },
+          err instanceof AuthorArtifactError ? 400 : 500,
+        );
+      }
       return;
     }
 
@@ -569,16 +697,20 @@ async function snapshot(state: AppState) {
   if (state.pack && !state.last) {
     state.last = await compilePack(state.pack);
   }
+  const authorRun = state.pack ? await readAuthorRun(state.pack) : null;
   const improveReview = state.pack ? await evaluateImproveReview(state.pack) : null;
   const agentQuestions = state.pack ? await readAgentQuestions(state.pack) : null;
   const openQuestions = isOpenQuestions(agentQuestions) ? agentQuestions : null;
   if (improveReview?.files.length && !state.implementActivity.some((line) => line.message === "Improve patch ready to review.")) {
     pushActivity(state, "Improve patch ready to review.", "ok");
   }
-  if (openQuestions && !state.implementActivity.some((line) => line.message === AGENT_QUESTIONS_WAITING)) {
+  if (openQuestions && openQuestions.channel === "author" && !state.authorActivity.some((line) => line.message === AGENT_QUESTIONS_WAITING)) {
+    pushActivity(state, AGENT_QUESTIONS_WAITING, "info", "author");
+  } else if (openQuestions && openQuestions.channel !== "author" && !state.implementActivity.some((line) => line.message === AGENT_QUESTIONS_WAITING)) {
     pushActivity(state, AGENT_QUESTIONS_WAITING);
   }
   let health = state.last ? applyImproveReviewGate(state.last.health, openQuestions ? null : improveReview) : null;
+  if (health) health = applyAuthorGate(health, authorRun);
   if (health) health = applyAgentQuestionsGate(health, openQuestions);
   let proofReport = "";
   if (state.pack) {
@@ -604,9 +736,11 @@ async function snapshot(state: AppState) {
     productRepo: await inspectProductRepo(await inspectFrom(state)),
     implementActivity: state.implementActivity,
     proveActivity: state.proveActivity,
+    authorActivity: state.authorActivity,
     busy: state.busy,
     improveReview,
     agentQuestions,
+    authorRun,
   };
 }
 
@@ -694,6 +828,53 @@ async function runImplement(
   }
 }
 
+async function runAuthor(
+  state: AppState,
+  pack: PackPaths,
+  launch: LaunchAdapterResult,
+  adapter: AdapterId,
+): Promise<void> {
+  let current = launch;
+  try {
+    while (true) {
+      const settled = await settleAuthor(pack, current);
+      if (state.pack?.root === pack.root) state.last = settled.result;
+      pushActivity(
+        state,
+        settled.message,
+        settled.action === "done" ? "ok" : settled.action === "capped" ? "error" : "info",
+        "author",
+      );
+      if (settled.action === "wait_questions" || settled.action === "done" || settled.action === "capped") {
+        break;
+      }
+      if (settled.action !== "relaunch") break;
+      const next = await launchAuthor(pack, {
+        adapter,
+        onLogLine: (line) => pushActivity(state, line, "info", "author"),
+      });
+      pushActivity(state, next.message, next.ok ? "ok" : "error", "author");
+      if (!next.finished) break;
+      current = next;
+      state.authorLaunch = next;
+    }
+  } catch (err) {
+    pushActivity(state, err instanceof Error ? err.message : "Authoring failed.", "error", "author");
+  } finally {
+    if (state.busy === "author") state.busy = null;
+    if (state.authorLaunch === current || state.authorLaunch === launch) state.authorLaunch = null;
+  }
+}
+
+function discardedLaunch(
+  state: AppState,
+  channel: string | undefined,
+): LaunchAdapterResult | null {
+  if (channel === "author") return state.authorLaunch;
+  if (channel === "implement") return state.implementLaunch;
+  return state.implementLaunch;
+}
+
 async function runProve(state: AppState, pack: PackPaths): Promise<void> {
   try {
     const proved = await provePack(pack, {
@@ -714,6 +895,7 @@ async function runProve(state: AppState, pack: PackPaths): Promise<void> {
 function clearActivity(state: AppState, channel?: ActivityChannel): void {
   if (!channel || channel === "implement") state.implementActivity = [];
   if (!channel || channel === "prove") state.proveActivity = [];
+  if (!channel || channel === "author") state.authorActivity = [];
 }
 
 function pushActivity(
@@ -725,6 +907,10 @@ function pushActivity(
   const line: ActivityLine = { at: new Date().toISOString(), level, message };
   if (channel === "prove") {
     state.proveActivity = [...state.proveActivity, line].slice(-80);
+    return;
+  }
+  if (channel === "author") {
+    state.authorActivity = [...state.authorActivity, line].slice(-80);
     return;
   }
   state.implementActivity = [...state.implementActivity, line].slice(-80);

@@ -89,6 +89,8 @@ export type StageBoard = {
   ignoreBuild?: StageAction;
   /** Shown while Implement is running. */
   stopImplement?: StageAction;
+  /** Shown while authoring is running. */
+  stopAuthor?: StageAction;
 };
 
 /** Cockpit display only. health.json still uses spec / ready / build / proof. */
@@ -305,7 +307,7 @@ export type ProofRun = {
 };
 
 export type ActivityLevel = "info" | "ok" | "error";
-export type ActivityChannel = "implement" | "prove";
+export type ActivityChannel = "implement" | "prove" | "author";
 
 export type ActivityLine = {
   at: string;

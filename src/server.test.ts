@@ -38,6 +38,8 @@ describe("cockpit reload contract", () => {
     expect(js).toMatch(/proveActivity/);
     expect(js).toMatch(/qaTab = "activity"/);
     expect(js).toMatch(/implementTab = "questions"/);
+    expect(js).toMatch(/authorActivity/);
+    expect(js).toMatch(/\/api\/author\/start/);
     expect(js).toMatch(/\/api\/agent-answers/);
     expect(js).not.toMatch(/\bactivityLines\b/);
     expect(js).toMatch(/from\s+["']\.\/markdown-editor\.js["']/);
@@ -294,6 +296,55 @@ describe("cockpit reload contract", () => {
         body: JSON.stringify({ answers: { q1: "a" }, adapter: "manual" }),
       });
       expect(again.status).toBe(400);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps create as id-only, then authors from a description", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "req0-author-api-"));
+    try {
+      const { url } = await listen(createAppState(parent, null));
+      const created = await fetch(`${url}/api/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: "new-pack" }),
+      });
+      expect(created.status).toBe(200);
+      const snap = await created.json();
+      expect(snap.packId).toBe("new-pack");
+      expect(snap.health.nextAction).toMatchObject({ id: "author-start", label: "Start" });
+      expect(snap.markdown).toContain("## Description [Required]");
+      expect(snap.health).not.toHaveProperty("author");
+      const empty = await fetch(`${url}/api/author/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: "   ", adapter: "manual" }),
+      });
+      expect(empty.status).toBe(409);
+      const started = await fetch(`${url}/api/author/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: "Viewers can list unpaid invoices.", adapter: "manual" }),
+      });
+      expect(started.status).toBe(200);
+      const body = await started.json();
+      expect(body.markdown).toContain("## Overview");
+      expect(body.markdown).toContain("Viewers can list unpaid invoices.");
+      expect(body.markdown).not.toContain("## Description [Required]");
+      expect(body.authorRun.description).toBe("Viewers can list unpaid invoices.");
+      expect(body.authorActivity.some((line: { message: string }) => line.message.includes("author-brief"))).toBe(true);
+      const upload = await fetch(`${url}/api/author/artifact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: "board.png",
+          mime: "image/png",
+          data: Buffer.from("png").toString("base64"),
+        }),
+      });
+      expect(upload.status).toBe(200);
+      expect((await upload.json()).filename).toBe("board.png");
     } finally {
       await rm(parent, { recursive: true, force: true });
     }

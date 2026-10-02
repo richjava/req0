@@ -19,9 +19,13 @@ export class AgentAnswersError extends Error {
   }
 }
 
-export type AgentQuestionsChannel = "improve" | "implement";
+export type AgentQuestionsChannel = "author" | "improve" | "implement";
 
-export type AgentQuestionKind = "text" | "choice";
+export type AgentQuestionKind = "text" | "choice" | "artifact";
+
+export const SKIP_ANSWER = "__skip__";
+
+export const AUTHOR_ARTIFACT_ACCEPT = ["image/png", "image/jpeg", "image/webp"] as const;
 
 export type AgentQuestionOption = {
   id: string;
@@ -31,6 +35,8 @@ export type AgentQuestionOption = {
 export type AgentQuestionAnswer = {
   text?: string;
   optionId?: string;
+  skipped?: boolean;
+  artifact?: string;
 };
 
 export type AgentQuestion = {
@@ -39,6 +45,8 @@ export type AgentQuestion = {
   kind: AgentQuestionKind;
   options?: AgentQuestionOption[];
   required: boolean;
+  allowCustom?: boolean;
+  accept?: string[];
   answer?: AgentQuestionAnswer;
 };
 
@@ -50,12 +58,21 @@ export type AgentQuestionsRound = {
   questions: AgentQuestion[];
 };
 
-export function questionsBriefSection(): string {
+export function questionsBriefSection(
+  options: { channel?: AgentQuestionsChannel; inventIds?: boolean } = {},
+): string {
+  const channel = options.channel ?? "implement";
+  const invent = options.inventIds === true;
   return [
     "## If you must ask",
     "",
-    "Do not guess a required decision (trade-off, missing intent, real test user vs fixture). Do not invent BR- or UC- IDs.",
+    invent
+      ? "Do not guess a required decision. You may assign the first BR-NNN and UC-NNN IDs in this pack. Do not copy IDs from sibling packs."
+      : "Do not guess a required decision (trade-off, missing intent, real test user vs fixture). Do not invent BR- or UC- IDs.",
     `Write \`${AGENT_QUESTIONS_PATH}\` using the shape below, replace the file, then **stop**. Do not patch \`requirement.md\` or product code in the same turn.`,
+    "At most four questions. Highest-leverage gaps first. For `choice`, put your recommended option first. Set `allowCustom` true when the owner may type something else.",
+    "The owner may skip one question or all of them. Skipped is not an answer: do not assume. Ask a different question later, or leave that gap in `## Open questions`.",
+    "If a screenshot or mock would resolve a gap, use `kind: \"artifact\"` (PNG/JPG/WebP). The owner may skip the upload.",
     "The owner answers in the cockpit. The next launch includes those answers. Then continue.",
     "Do not put secrets in this file.",
     "",
@@ -63,7 +80,7 @@ export function questionsBriefSection(): string {
     JSON.stringify(
       {
         version: 1,
-        channel: "implement",
+        channel,
         status: "open",
         at: "2026-01-01T00:00:00.000Z",
         questions: [
@@ -72,16 +89,18 @@ export function questionsBriefSection(): string {
             prompt: "Which option should we take?",
             kind: "choice",
             options: [
-              { id: "a", label: "Option A" },
+              { id: "a", label: "Option A (recommended)" },
               { id: "b", label: "Option B" },
             ],
             required: true,
+            allowCustom: true,
           },
           {
             id: "q2",
-            prompt: "Any extra note for the owner?",
-            kind: "text",
+            prompt: "Upload a screenshot of the screen this requirement covers, if you have one.",
+            kind: "artifact",
             required: false,
+            accept: [...AUTHOR_ARTIFACT_ACCEPT],
           },
         ],
       },
@@ -90,7 +109,7 @@ export function questionsBriefSection(): string {
     ),
     "~~~~",
     "",
-    "Set `channel` to `improve` when patching the requirement pack, or `implement` when writing product code.",
+    "Set `channel` to `author` when filling a new pack from a description, `improve` when patching after Ready, or `implement` when writing product code.",
     "",
   ].join("\n");
 }
@@ -99,7 +118,7 @@ export function parseAgentQuestions(raw: unknown): AgentQuestionsRound | null {
   if (!raw || typeof raw !== "object") return null;
   const body = raw as Record<string, unknown>;
   if (body.version !== 1) return null;
-  if (body.channel !== "improve" && body.channel !== "implement") return null;
+  if (body.channel !== "author" && body.channel !== "improve" && body.channel !== "implement") return null;
   if (body.status !== "open" && body.status !== "answered") return null;
   if (typeof body.at !== "string" || !body.at.trim()) return null;
   if (!Array.isArray(body.questions) || body.questions.length === 0) return null;
@@ -142,16 +161,28 @@ export function isOpenQuestions(round: AgentQuestionsRound | null | undefined): 
 }
 
 export function requiredUnanswered(round: AgentQuestionsRound): AgentQuestion[] {
-  return round.questions.filter((question) => question.required && !hasAnswer(question));
+  return round.questions.filter((question) => question.required && !hasAnswer(question) && !isSkipped(question));
 }
 
-export function applyAnswers(round: AgentQuestionsRound, answers: Record<string, string>): AgentQuestionsRound {
+export function applyAnswers(
+  round: AgentQuestionsRound,
+  answers: Record<string, string>,
+  options: { skipAll?: boolean } = {},
+): AgentQuestionsRound {
   if (!isOpenQuestions(round)) {
     throw new AgentAnswersError("No open questions to answer.");
+  }
+  const known = new Set(round.questions.map((question) => question.id));
+  const unknown = Object.keys(answers).filter((id) => !known.has(id));
+  if (unknown.length) {
+    throw new AgentAnswersError(`Unknown question id: ${unknown[0]}.`);
   }
   const next: AgentQuestion[] = round.questions.map((question) => {
     const raw = answers[question.id];
     const value = typeof raw === "string" ? raw.trim() : "";
+    if (value === SKIP_ANSWER || (!value && options.skipAll)) {
+      return { ...question, answer: { skipped: true } };
+    }
     if (!value) {
       if (question.required) {
         throw new AgentAnswersError(`Answer is required: ${question.id}.`);
@@ -160,17 +191,15 @@ export function applyAnswers(round: AgentQuestionsRound, answers: Record<string,
     }
     if (question.kind === "choice") {
       const option = (question.options ?? []).find((item) => item.id === value);
-      if (!option) {
-        throw new AgentAnswersError(`Unknown option for ${question.id}.`);
-      }
-      return { ...question, answer: { optionId: option.id } };
+      if (option) return { ...question, answer: { optionId: option.id } };
+      if (question.allowCustom) return { ...question, answer: { text: value } };
+      throw new AgentAnswersError(`Unknown option for ${question.id}.`);
+    }
+    if (question.kind === "artifact") {
+      return { ...question, answer: { artifact: value } };
     }
     return { ...question, answer: { text: value } };
   });
-  const unknown = Object.keys(answers).filter((id) => !round.questions.some((question) => question.id === id));
-  if (unknown.length) {
-    throw new AgentAnswersError(`Unknown question id: ${unknown[0]}.`);
-  }
   return {
     ...round,
     status: "answered",
@@ -190,6 +219,7 @@ export function formatOwnerAnswers(round: AgentQuestionsRound): string {
   if (lines.length === 2) return "";
   lines.push("");
   lines.push("Use these answers. Do not ask the same questions again unless a new required decision appears.");
+  lines.push("Skipped questions are not answers. Do not invent facts for them.");
   return lines.join("\n");
 }
 
@@ -202,7 +232,7 @@ export function withOwnerAnswers(prompt: string, round: AgentQuestionsRound | nu
 
 export function applyAgentQuestionsGate(health: Health, round: AgentQuestionsRound | null): Health {
   if (!isOpenQuestions(round) || !health.stages) return health;
-  const improve = round.channel === "improve";
+  const defineSide = round.channel === "improve" || round.channel === "author";
   return {
     ...health,
     howThisIsGoing: "The agent has questions.",
@@ -210,9 +240,9 @@ export function applyAgentQuestionsGate(health: Health, round: AgentQuestionsRou
       id: "answer-questions",
       label: "Continue",
       enabled: true,
-      hint: "Answer each required question, then Continue.",
+      hint: "Answer each required question, then Continue. You may skip a question or all of them.",
     },
-    stages: gateStages(health.stages, improve),
+    stages: gateStages(health.stages, defineSide),
   };
 }
 
@@ -264,8 +294,8 @@ function parseQuestion(raw: unknown): AgentQuestion | null {
   const body = raw as Record<string, unknown>;
   if (typeof body.id !== "string" || !body.id.trim()) return null;
   if (typeof body.prompt !== "string" || !body.prompt.trim()) return null;
-  if (body.kind !== "text" && body.kind !== "choice") return null;
-  const required = body.required === false ? false : true;
+  if (body.kind !== "text" && body.kind !== "choice" && body.kind !== "artifact") return null;
+  const required = body.kind === "artifact" ? body.required === true : body.required === false ? false : true;
   let options: AgentQuestionOption[] | undefined;
   if (body.kind === "choice") {
     if (!Array.isArray(body.options) || body.options.length < 2) return null;
@@ -281,12 +311,25 @@ function parseQuestion(raw: unknown): AgentQuestion | null {
       options.push({ id: option.id, label: option.label });
     }
   }
+  let accept: string[] | undefined;
+  if (body.kind === "artifact") {
+    if (Array.isArray(body.accept) && body.accept.length) {
+      accept = body.accept.filter((item): item is string => typeof item === "string" && Boolean(item.trim()));
+      if (!accept.length) accept = [...AUTHOR_ARTIFACT_ACCEPT];
+    } else {
+      accept = [...AUTHOR_ARTIFACT_ACCEPT];
+    }
+  }
   let answer: AgentQuestionAnswer | undefined;
   if (body.answer && typeof body.answer === "object") {
     const value = body.answer as Record<string, unknown>;
-    if (typeof value.text === "string" && value.text.trim()) answer = { text: value.text.trim() };
+    if (value.skipped === true) answer = { skipped: true };
+    if (typeof value.text === "string" && value.text.trim()) answer = { ...answer, text: value.text.trim() };
     if (typeof value.optionId === "string" && value.optionId.trim()) {
       answer = { ...answer, optionId: value.optionId.trim() };
+    }
+    if (typeof value.artifact === "string" && value.artifact.trim()) {
+      answer = { ...answer, artifact: value.artifact.trim() };
     }
   }
   return {
@@ -295,19 +338,31 @@ function parseQuestion(raw: unknown): AgentQuestion | null {
     kind: body.kind,
     ...(options ? { options } : {}),
     required,
+    ...(body.kind === "choice" && body.allowCustom === true ? { allowCustom: true } : {}),
+    ...(accept ? { accept } : {}),
     ...(answer ? { answer } : {}),
   };
 }
 
 function hasAnswer(question: AgentQuestion): boolean {
-  return Boolean(question.answer?.text?.trim() || question.answer?.optionId?.trim());
+  return Boolean(
+    question.answer?.text?.trim() || question.answer?.optionId?.trim() || question.answer?.artifact?.trim(),
+  );
+}
+
+function isSkipped(question: AgentQuestion): boolean {
+  return question.answer?.skipped === true;
 }
 
 function answerLabel(question: AgentQuestion): string {
+  if (question.answer?.skipped) return "Skipped. Do not assume an answer.";
+  if (question.answer?.artifact) return `Uploaded context/${question.answer.artifact}. Read that file.`;
   if (question.kind === "choice") {
     const id = question.answer?.optionId;
     const option = question.options?.find((item) => item.id === id);
-    return option?.label ?? id ?? "";
+    if (option) return option.label;
+    if (question.allowCustom && question.answer?.text?.trim()) return question.answer.text.trim();
+    return id ?? "";
   }
   return question.answer?.text?.trim() ?? "";
 }

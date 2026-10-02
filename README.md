@@ -6,11 +6,11 @@
 
 # Req0
 
-Req0 is a **requirement operating system** for a product git repo. You write a structured requirement pack. The same pack drives definition, implementation, and proof — not a parallel ticket or test script.
+Req0 is a **requirement operating system** for a product git repo. One structured pack drives definition, implementation, and proof — not a ticket, a chat, or a separate test script.
 
-A local **cockpit** shows health and the next action. A deterministic compiler checks the grammar. **Jev** (TypeSafe System One) judges whether the spec is ready to implement. Coding agents (Cursor or Copilot) implement; the browser proves the app.
+A local **cockpit** runs that loop: a coding agent (Cursor or Copilot) interviews you, drafts frozen-grammar `requirement.md`, and later implements — only after you answer, a compiler checks the grammar, and **Jev** (TypeSafe System One) judges Ready. The browser then proves the app against the spec. If proof fails, **Fix from proof** sends that report back so the same agent can repair the implementation — not the spec.
 
-Req0 is a CLI plus a thin HTML cockpit. It is not a hosted SaaS.
+Req0 is a CLI plus a thin HTML cockpit, free and open source. It is not a hosted SaaS.
 
 ## Install
 
@@ -37,9 +37,9 @@ cd /path/to/your-product
 req0 start
 ```
 
-The cockpit opens at `http://127.0.0.1:4370` (or the next free port). From the requirement list, create a pack with a kebab-case id such as `001`. That writes `docs/requirements/<id>/` using the starter template.
+The cockpit opens at `http://127.0.0.1:4370` (or the next free port). From the requirement list, create a pack with a kebab-case id such as `001`. That writes `docs/requirements/<id>/`. On **Define**, describe the requirement and **Start** — the recorded coding agent interviews you (you can skip questions) and drafts frozen-grammar `requirement.md`. Optional PNG/JPG/WebP go in that pack’s `context/` folder. `req0 create` on the CLI still writes the starter template only.
 
-Edit `requirement.md` on **Define**. Save compiles. Spec Valid means the [grammar](https://github.com/richjava/req0/blob/main/docs/grammar.md) parsed — it does not mean the spec is ready to implement.
+You can also edit `requirement.md` yourself. Save compiles. Spec Valid means the [grammar](https://github.com/richjava/req0/blob/main/docs/grammar.md) parsed — it does not mean the spec is ready to implement. With a TypeSafe key, authoring keeps going until Ready is Clear; without one, it stops at Spec Valid.
 
 ## Commands
 
@@ -65,6 +65,7 @@ docs/requirements/invoice-approval/
   requirement.md
   fixtures/personas.yaml    # test users, never production credentials
   fixtures/runtime.yaml     # app URL and login selectors for Prove
+  context/                  # optional screenshots the authoring agent can Read
   derived/                  # generated; do not hand-edit
 ```
 

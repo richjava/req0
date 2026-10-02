@@ -10,7 +10,7 @@ import { createMockJevClient } from "./jev.js";
 import { ProveLockedError } from "./proof.js";
 import { IgnoreBuildLockedError, specHash } from "./ready.js";
 import { AgentAnswersError, AGENT_QUESTIONS_WAITING, applyAnswers, writeAgentQuestions } from "./agent-questions.js";
-import { checkPack, compilePack, createPack, deletePack, finishImplement, ignoreBuild, implementPack, improvePack, listPacks, packPaths, persistDerived, provePack, resolveCockpitPack, resolvePack, shouldRefreshForWatch, summarizePacks, withRememberedAnswers } from "./pack.js";
+import { checkPack, compilePack, createPack, deletePack, finishImplement, ignoreBuild, implementPack, improvePack, listPacks, packPaths, persistDerived, provePack, resolveCockpitPack, resolvePack, saveAuthorArtifact, shouldRefreshForWatch, startAuthor, summarizePacks, withRememberedAnswers } from "./pack.js";
 import { readReq0Config } from "./stack.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -538,6 +538,9 @@ describe("pack watch and persist", () => {
     expect(shouldRefreshForWatch(dir, "invoice-approval/fixtures/runtime.yaml")).toBe(true);
     expect(shouldRefreshForWatch(dir, "invoice-approval/derived/health.json")).toBe(false);
     expect(shouldRefreshForWatch(dir, "invoice-approval/derived/status.md")).toBe(false);
+    expect(shouldRefreshForWatch(dir, "invoice-approval/derived/author-run.json")).toBe(false);
+    expect(shouldRefreshForWatch(dir, "invoice-approval/derived/author-brief.md")).toBe(false);
+    expect(shouldRefreshForWatch(dir, "invoice-approval/context/mock.png")).toBe(true);
     expect(shouldRefreshForWatch(dir, null)).toBe(false);
     expect(shouldRefreshForWatch("/pack/requirement.md", null)).toBe(true);
     expect(shouldRefreshForWatch("/pack/fixtures", "personas.yaml")).toBe(true);
@@ -554,6 +557,37 @@ describe("pack watch and persist", () => {
       await persistDerived(paths, compiled);
       const second = await stat(paths.health);
       expect(second.mtimeMs).toBe(first.mtimeMs);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("author from description", () => {
+  it("seeds frozen grammar, writes a brief, and does not auto-loop on manual", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "req0-author-"));
+    const root = path.join(parent, "docs/requirements/demo-pack");
+    try {
+      const paths = await createPack(root);
+      const started = await startAuthor(paths, "Viewers can list unpaid invoices.", { adapter: "manual" });
+      expect(started.result.markdown).toContain("## Overview");
+      expect(started.result.markdown).toContain("Viewers can list unpaid invoices.");
+      expect(started.result.markdown).not.toContain("## Description");
+      expect(started.run.status).toBe("stopped");
+      const brief = await readFile(paths.authorBrief, "utf8");
+      expect(brief).toContain("Author: demo-pack");
+      expect(brief).toContain("channel\": \"author\"");
+      const health = JSON.parse(await readFile(paths.health, "utf8"));
+      expect(Object.keys(health)).toEqual(expect.arrayContaining(["spec", "ready", "build", "proof"]));
+      expect(health).not.toHaveProperty("author");
+      const saved = await saveAuthorArtifact(
+        paths,
+        "Approval screen.png",
+        "image/png",
+        Buffer.from("png-bytes").toString("base64"),
+      );
+      expect(saved).toBe("Approval-screen.png");
+      expect(await readFile(path.join(paths.context, saved))).toEqual(Buffer.from("png-bytes"));
     } finally {
       await rm(parent, { recursive: true, force: true });
     }

@@ -80,7 +80,15 @@ const els = {
   questionActions: document.getElementById("question-actions"),
   questionContinue: document.getElementById("question-continue"),
   questionStop: document.getElementById("question-stop"),
+  questionSkipAll: document.getElementById("question-skip-all"),
   defineQuestions: document.getElementById("define-questions"),
+  defineTabs: document.getElementById("define-tabs"),
+  defineTabQuestions: document.getElementById("define-tab-questions"),
+  defineTabActivity: document.getElementById("define-tab-activity"),
+  defineActivity: document.getElementById("define-activity"),
+  authorDescribe: document.getElementById("author-describe"),
+  authorDescription: document.getElementById("author-description"),
+  authorStart: document.getElementById("author-start"),
   implementTabs: document.getElementById("implement-tabs"),
   implementTabQuestions: document.getElementById("implement-tab-questions"),
   implementTabActivity: document.getElementById("implement-tab-activity"),
@@ -118,6 +126,10 @@ let lastImplementKey = "";
 let lastProveKey = "";
 let qaTab = "activity";
 let implementTab = "questions";
+let defineTab = "questions";
+let authorLines = [];
+let lastAuthorKey = "";
+const SKIP_ANSWER = "__skip__";
 let questionDrafts = {};
 let questionDraftKey = "";
 let lastQuestionsKey = "";
@@ -130,10 +142,11 @@ function applyActivities(payload) {
   if (!payload) return;
   if (Array.isArray(payload.implementActivity)) implementLines = payload.implementActivity;
   if (Array.isArray(payload.proveActivity)) proveLines = payload.proveActivity;
+  if (Array.isArray(payload.authorActivity)) authorLines = payload.authorActivity;
 }
 
 function lastBusyMessage(kind) {
-  const lines = kind === "prove" ? proveLines : implementLines;
+  const lines = kind === "prove" ? proveLines : kind === "author" ? authorLines : implementLines;
   return lines[lines.length - 1]?.message ?? "";
 }
 
@@ -250,11 +263,13 @@ function render() {
   syncQuestionDrafts(questions);
   maybeOpenQuestions(questions);
   if (review?.files?.length || questions) actionNotice = "";
-  const canStop = action?.id === "stop-implement";
+  const canStop = action?.id === "stop-implement" || action?.id === "stop-author";
   const continueReady = action?.id !== "answer-questions" || questionsContinueEnabled(questions);
+  const describeReady = action?.id !== "author-start" || Boolean(String(els.authorDescription?.value ?? "").trim());
   const nextEnabled =
     Boolean(action?.enabled) &&
     continueReady &&
+    describeReady &&
     !(actionBusy && !canStop && !review?.files?.length && !questions);
   const nextLabel =
     actionBusy && headerBusyLabel && !canStop && !review?.files?.length && !questions
@@ -293,7 +308,7 @@ function render() {
   if (review && !questions && currentView !== "define") currentView = "define";
   if (currentView === "implement" && health?.build?.owned === false) currentView = "define";
 
-  if (!applying && !state.improveReview && questions?.channel !== "improve") {
+  if (!applying && !state.improveReview && questions?.channel !== "improve" && questions?.channel !== "author") {
     applying = true;
     markdownEditor.setValue(state.markdown ?? "");
     applying = false;
@@ -302,8 +317,10 @@ function render() {
   renderPipeline();
   renderStageNav();
   showView(currentView);
+  renderAuthorDescribe();
   renderReview();
   renderQuestions();
+  renderDefineLayout();
   renderImplementLayout();
   renderSpecPane();
   renderJudgmentPane();
@@ -440,7 +457,10 @@ async function selectPack(id) {
   currentView = "define";
   qaTab = "activity";
   implementTab = "questions";
+  defineTab = "questions";
   lastQuestionsKey = "";
+  authorLines = [];
+  if (els.authorDescription) els.authorDescription.value = "";
   actionNotice = "";
   render();
 }
@@ -457,7 +477,9 @@ async function goHome() {
   currentView = "define";
   qaTab = "activity";
   implementTab = "questions";
+  defineTab = "questions";
   lastQuestionsKey = "";
+  authorLines = [];
   actionNotice = "";
   render();
 }
@@ -472,9 +494,10 @@ function openQuestions() {
 
 function questionsContinueEnabled(round = openQuestions()) {
   if (!round) return false;
-  return round.questions.every(
-    (question) => !question.required || String(questionDrafts[question.id] ?? "").trim(),
-  );
+  return round.questions.every((question) => {
+    if (!question.required) return true;
+    return Boolean(String(questionDrafts[question.id] ?? "").trim());
+  });
 }
 
 function syncQuestionDrafts(round) {
@@ -486,15 +509,18 @@ function syncQuestionDrafts(round) {
   questionDrafts = {};
   if (!round) return;
   for (const question of round.questions) {
-    questionDrafts[question.id] = question.answer?.optionId || question.answer?.text || "";
+    questionDrafts[question.id] = question.answer?.skipped
+      ? SKIP_ANSWER
+      : question.answer?.optionId || question.answer?.text || question.answer?.artifact || "";
   }
 }
 
 function maybeOpenQuestions(round) {
   const key = round ? `${round.channel}|${round.at}` : "";
   if (key && key !== lastQuestionsKey) {
-    currentView = round.channel === "improve" ? "define" : "implement";
-    implementTab = "questions";
+    currentView = round.channel === "implement" ? "implement" : "define";
+    if (round.channel === "implement") implementTab = "questions";
+    else defineTab = "questions";
   }
   lastQuestionsKey = key;
 }
@@ -508,16 +534,68 @@ function collectedAnswers(round = openQuestions()) {
   return answers;
 }
 
+async function uploadAuthorArtifact(questionId, file, status) {
+  status.textContent = "Uploading…";
+  try {
+    const data = await fileToBase64(file);
+    const res = await fetch("/api/author/artifact", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, mime: file.type || mimeFromName(file.name), data }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      status.textContent = body.error ?? "Could not save the upload.";
+      return;
+    }
+    questionDrafts[questionId] = body.filename ?? file.name;
+    status.textContent = `Saved context/${questionDrafts[questionId]}`;
+    if (body.health || body.packId) state = { ...state, ...body };
+    applyActivities(body);
+    paintQuestionContinue();
+  } catch (err) {
+    status.textContent = err instanceof Error ? err.message : "Could not save the upload.";
+  }
+}
+
+function mimeFromName(name) {
+  if (/\.png$/i.test(name)) return "image/png";
+  if (/\.jpe?g$/i.test(name)) return "image/jpeg";
+  if (/\.webp$/i.test(name)) return "image/webp";
+  return "";
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(new Error("Could not read the file."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function paintQuestionContinue() {
   const round = openQuestions();
-  const askingDefine = round?.channel === "improve";
+  const askingDefine = round?.channel === "improve" || round?.channel === "author";
   const ready = questionsContinueEnabled(round);
   paintActionButton(els.questionContinue, {
     id: "answer-questions",
     label: "Continue",
-    hint: "Answer each required question, then Continue.",
+    hint: "Answer each required question, then Continue. You may skip a question or all of them.",
     enabled: Boolean(askingDefine && ready && !actionBusy),
     primary: true,
+    hidden: !askingDefine,
+  });
+  paintActionButton(els.questionSkipAll, {
+    id: "skip-all-questions",
+    label: "Skip all",
+    hint: "Skip this round. The agent will not assume answers.",
+    enabled: Boolean(askingDefine && !actionBusy),
+    primary: false,
     hidden: !askingDefine,
   });
   const action = state?.health?.nextAction;
@@ -527,6 +605,16 @@ function paintQuestionContinue() {
       label: action.label,
       hint: action.hint || "",
       enabled: Boolean(action.enabled && ready && !actionBusy),
+      primary: true,
+      hidden: false,
+    });
+  }
+  if (action?.id === "author-start") {
+    paintActionButton(els.next, {
+      id: action.id,
+      label: action.label,
+      hint: action.hint || "",
+      enabled: Boolean(action.enabled && String(els.authorDescription?.value ?? "").trim() && !actionBusy),
       primary: true,
       hidden: false,
     });
@@ -560,14 +648,26 @@ function renderQuestionCard(question) {
   const article = document.createElement("article");
   article.className = "question-card";
   article.dataset.questionId = question.id;
+  const heading = document.createElement("div");
+  heading.className = "question-card-row";
   const prompt = document.createElement("p");
   prompt.className = "question-card-prompt";
   prompt.textContent = question.prompt;
-  article.append(prompt);
+  heading.append(prompt);
+  const skip = document.createElement("button");
+  skip.type = "button";
+  skip.className = "btn-secondary";
+  skip.textContent = questionDrafts[question.id] === SKIP_ANSWER ? "Skipped" : "Skip";
+  skip.addEventListener("click", () => {
+    questionDrafts[question.id] = questionDrafts[question.id] === SKIP_ANSWER ? "" : SKIP_ANSWER;
+    render();
+  });
+  heading.append(skip);
+  article.append(heading);
   if (question.kind === "choice") {
     const choices = document.createElement("div");
     choices.className = "question-choices";
-    for (const option of question.options ?? []) {
+    (question.options ?? []).forEach((option, index) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "stack-choice";
@@ -576,18 +676,54 @@ function renderQuestionCard(question) {
       const label = document.createElement("strong");
       label.textContent = option.label;
       btn.append(label);
+      if (index === 0) {
+        const suggested = document.createElement("span");
+        suggested.className = "question-suggested";
+        suggested.textContent = "Suggested";
+        btn.append(suggested);
+      }
       btn.addEventListener("click", () => {
         questionDrafts[question.id] = option.id;
         render();
       });
       choices.append(btn);
-    }
+    });
     article.append(choices);
+    if (question.allowCustom) {
+      const input = document.createElement("input");
+      input.className = "input";
+      input.type = "text";
+      const current = questionDrafts[question.id] ?? "";
+      const optionIds = new Set((question.options ?? []).map((option) => option.id));
+      input.value = optionIds.has(current) || current === SKIP_ANSWER ? "" : current;
+      input.placeholder = "Something else";
+      input.addEventListener("input", () => {
+        questionDrafts[question.id] = input.value;
+        paintQuestionContinue();
+      });
+      article.append(input);
+    }
+  } else if (question.kind === "artifact") {
+    const file = document.createElement("input");
+    file.className = "input";
+    file.type = "file";
+    file.accept = (question.accept ?? ["image/png", "image/jpeg", "image/webp"]).join(",");
+    const status = document.createElement("p");
+    status.className = "question-card-meta";
+    const current = questionDrafts[question.id] ?? "";
+    status.textContent =
+      current && current !== SKIP_ANSWER ? `Saved context/${current}` : "Optional. PNG, JPG, or WebP.";
+    file.addEventListener("change", () => {
+      const picked = file.files?.[0];
+      if (!picked) return;
+      void uploadAuthorArtifact(question.id, picked, status);
+    });
+    article.append(file, status);
   } else {
     const input = document.createElement("input");
     input.className = "input";
     input.type = "text";
-    input.value = questionDrafts[question.id] ?? "";
+    input.value = questionDrafts[question.id] === SKIP_ANSWER ? "" : (questionDrafts[question.id] ?? "");
     input.placeholder = question.required ? "Required" : "Optional";
     input.addEventListener("input", () => {
       questionDrafts[question.id] = input.value;
@@ -606,7 +742,7 @@ function renderQuestionCard(question) {
 
 function renderQuestions() {
   const round = openQuestions();
-  const askingDefine = round?.channel === "improve";
+  const askingDefine = round?.channel === "improve" || round?.channel === "author";
   if (els.questionActions) els.questionActions.classList.toggle("hidden", !askingDefine);
   if (els.defineQuestions) {
     els.defineQuestions.classList.toggle("hidden", !askingDefine);
@@ -617,7 +753,7 @@ function renderQuestions() {
       delete els.defineQuestions.dataset.sig;
     }
   }
-  if (askingDefine) {
+  if (askingDefine && round?.channel === "improve") {
     els.workspace?.classList.add("is-review");
     markdownEditor.setHidden(true);
     if (els.save) els.save.classList.add("hidden");
@@ -626,15 +762,23 @@ function renderQuestions() {
   paintActionButton(els.questionContinue, {
     id: "answer-questions",
     label: "Continue",
-    hint: "Answer each required question, then Continue.",
+    hint: "Answer each required question, then Continue. You may skip a question or all of them.",
     enabled: Boolean(askingDefine && questionsContinueEnabled(round) && !actionBusy),
     primary: true,
+    hidden: !askingDefine,
+  });
+  paintActionButton(els.questionSkipAll, {
+    id: "skip-all-questions",
+    label: "Skip all",
+    hint: "Skip this round. The agent will not assume answers.",
+    enabled: Boolean(askingDefine && !actionBusy),
+    primary: false,
     hidden: !askingDefine,
   });
   paintActionButton(els.questionStop, {
     id: "discard-questions",
     label: "Stop",
-    hint: "Discard unanswered questions.",
+    hint: "Stop and discard unanswered questions.",
     enabled: Boolean(askingDefine && !actionBusy),
     primary: false,
     hidden: !askingDefine,
@@ -646,6 +790,56 @@ function renderQuestions() {
       delete els.implementQuestions.dataset.sig;
     }
   }
+}
+
+function offeringAuthor() {
+  return state?.health?.nextAction?.id === "author-start";
+}
+
+function authoringActive() {
+  const status = state?.authorRun?.status;
+  return status === "running" || status === "waiting_questions" || state?.busy === "author";
+}
+
+function renderAuthorDescribe() {
+  const offer = offeringAuthor();
+  if (els.authorDescribe) {
+    els.authorDescribe.classList.toggle("hidden", !offer);
+    els.authorDescribe.hidden = !offer;
+  }
+  if (els.authorStart) {
+    paintActionButton(els.authorStart, {
+      id: "author-start",
+      label: "Start",
+      hint: "The agent will draft the requirement from this description.",
+      enabled: Boolean(offer && String(els.authorDescription?.value ?? "").trim() && !actionBusy),
+      primary: true,
+      hidden: !offer,
+    });
+  }
+}
+
+function renderDefineLayout() {
+  const askingAuthor = openQuestions()?.channel === "author";
+  const hasActivity = authorLines.length > 0;
+  const showTabs = Boolean(askingAuthor && hasActivity);
+  if (!askingAuthor) defineTab = "questions";
+  else if (!hasActivity) defineTab = "questions";
+  els.defineTabs?.classList.toggle("hidden", !showTabs);
+  if (els.defineTabs) els.defineTabs.hidden = !showTabs;
+  if (askingAuthor && els.defineQuestions) {
+    const showQuestions = !showTabs || defineTab === "questions";
+    els.defineQuestions.classList.toggle("hidden", !showQuestions);
+    els.defineQuestions.hidden = !showQuestions;
+  }
+  const activityVisible = Boolean(authoringActive() && (!askingAuthor || (showTabs && defineTab === "activity")));
+  els.defineActivity?.classList.toggle("hidden", !activityVisible);
+  if (els.defineActivity) els.defineActivity.hidden = !activityVisible;
+  els.defineTabQuestions?.classList.toggle("is-active", defineTab !== "activity");
+  els.defineTabActivity?.classList.toggle("is-active", defineTab === "activity");
+  els.defineTabQuestions?.setAttribute("aria-selected", defineTab !== "activity" ? "true" : "false");
+  els.defineTabActivity?.setAttribute("aria-selected", defineTab === "activity" ? "true" : "false");
+  if (askingAuthor && els.workspaceLabel) els.workspaceLabel.textContent = "Agent questions";
 }
 
 function renderImplementLayout() {
@@ -1438,9 +1632,11 @@ function fillActivityLog(log, lines, emptyMessage, which) {
   if (!log) return;
   const rows = lines.length ? lines : [{ level: "info", message: emptyMessage }];
   const key = rows.map((line) => `${line.level}\0${line.message}`).join("\n");
-  const previous = which === "prove" ? lastProveKey : lastImplementKey;
+  const previous =
+    which === "prove" ? lastProveKey : which === "author" ? lastAuthorKey : lastImplementKey;
   if (key === previous && log.childElementCount === rows.length) return;
   if (which === "prove") lastProveKey = key;
+  else if (which === "author") lastAuthorKey = key;
   else lastImplementKey = key;
   const pinned = log.scrollHeight - log.scrollTop - log.clientHeight < 16;
   const savedTop = log.scrollTop;
@@ -1463,10 +1659,12 @@ function renderActivity() {
     "implement",
   );
   fillActivityLog(els.qaActivity, proveLines, "No activity yet. Prove writes progress here.", "prove");
+  fillActivityLog(els.defineActivity, authorLines, "No activity yet. Authoring writes progress here.", "author");
 }
 
 function appendActivity(line, channel) {
   if (channel === "prove") proveLines = [...proveLines, line].slice(-80);
+  else if (channel === "author") authorLines = [...authorLines, line].slice(-80);
   else implementLines = [...implementLines, line].slice(-80);
   if (line.message) {
     actionNotice = line.message;
@@ -1528,6 +1726,12 @@ onEnabledClick(els.questionContinue, () => {
 });
 onEnabledClick(els.questionStop, () => {
   void runStageAction("discard-questions");
+});
+onEnabledClick(els.questionSkipAll, () => {
+  void runStageAction("skip-all-questions");
+});
+onEnabledClick(els.authorStart, () => {
+  void runStageAction("author-start");
 });
 onEnabledClick(els.next, () => {
   void runStageAction(state.health?.nextAction?.id);
@@ -1610,8 +1814,10 @@ async function discardOpenQuestions() {
 
 function viewForAction(id) {
   if (id === "check-jev") return "judgment";
-  if (id === "improve" || id === "review-improve" || id === "fix-spec" || id === "create") return "define";
-  if (id === "answer-questions" || id === "discard-questions") {
+  if (id === "improve" || id === "review-improve" || id === "fix-spec" || id === "create" || id === "author-start" || id === "stop-author") {
+    return "define";
+  }
+  if (id === "answer-questions" || id === "discard-questions" || id === "skip-all-questions") {
     return openQuestions()?.channel === "implement" ? "implement" : "define";
   }
   if (id === "implement" || id === "stop-implement" || id === "ignore-build" || id === "fix-from-proof") {
@@ -1633,9 +1839,61 @@ async function runStageAction(id) {
     }
     const res = await fetch("/api/create-in-place", { method: "POST" });
     takeState(await res.json());
-    focusedSection = "Business Rules";
+    currentView = "define";
     render();
-    jumpToSection("Business Rules");
+    return;
+  }
+  if (id === "author-start") {
+    const description = String(els.authorDescription?.value ?? "").trim();
+    if (!description) return;
+    authorLines = [{ level: "info", message: "Authoring started." }];
+    actionNotice = "Authoring started.";
+    setActionHint(actionNotice);
+    renderActivity();
+    await runBackgroundAction(
+      "Authoring…",
+      "/api/author/start",
+      { description, adapter: recordedAdapter() },
+      "author",
+    );
+    return;
+  }
+  if (id === "stop-author") {
+    if (openQuestions()?.channel === "author") {
+      const confirmed = await askDiscardQuestions();
+      if (!confirmed) return;
+    }
+    actionNotice = "Stopping…";
+    setActionHint(actionNotice);
+    try {
+      const res = await fetch("/api/author/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const payload = await res.json();
+      if (payload.health || payload.packId) state = { ...state, ...payload };
+      applyActivities(payload);
+      actionNotice = payload.error ?? payload.message ?? "Owner stopped authoring.";
+    } catch (err) {
+      actionNotice = err instanceof Error ? err.message : "Stop failed.";
+    }
+    setActionHint(actionNotice);
+    render();
+    return;
+  }
+  if (id === "skip-all-questions") {
+    const round = openQuestions();
+    if (!round) return;
+    const kind = round.channel === "author" ? "author" : round.channel === "improve" ? "improve" : "implement";
+    actionNotice = "Skipping this round…";
+    setActionHint(actionNotice);
+    await runBackgroundAction(
+      "Continuing…",
+      "/api/agent-answers",
+      { answers: collectedAnswers(round), skipAll: true, adapter: recordedAdapter() },
+      kind,
+    );
     return;
   }
   if (id === "fix-spec") {
@@ -1658,7 +1916,7 @@ async function runStageAction(id) {
   if (id === "answer-questions") {
     const round = openQuestions();
     if (!round || !questionsContinueEnabled(round)) return;
-    const kind = round.channel === "improve" ? "improve" : "implement";
+    const kind = round.channel === "author" ? "author" : round.channel === "improve" ? "improve" : "implement";
     actionNotice = "Continuing with owner answers…";
     setActionHint(actionNotice);
     await runBackgroundAction(
@@ -1804,7 +2062,7 @@ async function waitWhileBusy(kind) {
       if (data.improveReview?.files?.length || data.agentQuestions?.status === "open") {
         actionNotice = "";
       } else {
-        const last = lastBusyMessage(kind === "prove" ? "prove" : "implement");
+        const last = lastBusyMessage(kind);
         if (last && !data.improveReview) {
           actionNotice = last;
           setActionHint(last);
@@ -1827,7 +2085,7 @@ async function refreshActivity() {
     applyActivities(data);
     if (data.improveReview?.files?.length || data.agentQuestions?.status === "open") actionNotice = "";
     else {
-      const last = lastBusyMessage(data.busy === "prove" ? "prove" : "implement");
+      const last = lastBusyMessage(data.busy === "prove" ? "prove" : data.busy === "author" ? "author" : "implement");
       if (last) {
         actionNotice = last;
         setActionHint(last);
@@ -1864,7 +2122,8 @@ async function runBackgroundAction(busyLabel, url, body, kind) {
     applyActivities(payload);
     if (
       (Array.isArray(payload.implementActivity) && payload.implementActivity.length) ||
-      (Array.isArray(payload.proveActivity) && payload.proveActivity.length)
+      (Array.isArray(payload.proveActivity) && payload.proveActivity.length) ||
+      (Array.isArray(payload.authorActivity) && payload.authorActivity.length)
     ) {
       renderActivity();
     }
@@ -2023,6 +2282,17 @@ els.implementTabActivity?.addEventListener("click", () => {
   implementTab = "activity";
   renderImplementLayout();
 });
+els.defineTabQuestions?.addEventListener("click", () => {
+  defineTab = "questions";
+  renderDefineLayout();
+});
+els.defineTabActivity?.addEventListener("click", () => {
+  defineTab = "activity";
+  renderDefineLayout();
+});
+els.authorDescription?.addEventListener("input", () => {
+  paintQuestionContinue();
+});
 els.discardCancel?.addEventListener("click", () => closeDiscardDialog("cancel"));
 els.discardConfirm?.addEventListener("click", () => closeDiscardDialog("confirm"));
 els.discardDialog?.addEventListener("cancel", () => closeDiscardDialog("cancel"));
@@ -2064,8 +2334,8 @@ els.createNew.addEventListener("click", async () => {
   currentView = "define";
   actionNotice = "";
   if (els.newId) els.newId.value = "";
+  if (els.authorDescription) els.authorDescription.value = "";
   render();
-  jumpToSection("Business Rules");
 });
 
 let pollTimer = null;
