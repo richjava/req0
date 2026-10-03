@@ -304,10 +304,11 @@ body {
 #all-requirements {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 6px;
   flex-shrink: 0;
   white-space: nowrap;
-  align-self: center;
+  align-self: flex-start;
 }
 
 #all-requirements svg {
@@ -1795,6 +1796,10 @@ body {
   .create-bar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  #all-requirements {
+    align-self: flex-start;
   }
 
   .pack-row {
