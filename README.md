@@ -10,17 +10,13 @@ Req0 allows you to keep structured requirement packs in your product git repo. T
 
 A local **cockpit** runs that loop: a coding agent (Cursor, Copilot, Claude, or Codex) interviews you, drafts frozen-grammar `requirement.md`, and later implements — only after you answer, a compiler checks the grammar, and **Jev** (TypeSafe System One) judges Ready. The browser then proves the app against the spec. If proof fails, **Fix from proof** sends that report back so the same agent can repair the implementation — not the spec.
 
+Implement is optional. On first run pick **I’ll write the code**, or set `"implement": false` in `req0.json` at the product repo root. Req0 then stays on the pack and QA; you implement your own way.
+
 Req0 is a CLI plus a thin HTML cockpit, free and open source. It is not a hosted SaaS.
 
 ## Install
 
 Node.js **22.15** or newer.
-
-```bash
-npm install -g @richjava/req0
-```
-
-Or run without a global install:
 
 ```bash
 npx @richjava/req0 start
@@ -34,7 +30,7 @@ From the **product** repo (the app you are specifying), not from inside this pac
 
 ```bash
 cd /path/to/your-product
-req0 start
+npx @richjava/req0 start
 ```
 
 The cockpit opens at `http://127.0.0.1:4370` (or the next free port). From the requirement list, create a pack with a kebab-case id such as `001`. That writes `docs/requirements/<id>/`. On **Define**, describe the requirement and **Start** — the recorded coding agent interviews you (you can skip questions) and drafts frozen-grammar `requirement.md`. Optional PNG/JPG/WebP go in that pack’s `context/` folder. `req0 create` on the CLI still writes the starter template only.
@@ -69,7 +65,7 @@ docs/requirements/invoice-approval/
   derived/                  # generated; do not hand-edit
 ```
 
-First run in an empty product repo asks how code should be written (**I’ll write the code**, **Cursor**, **Copilot**, **Claude**, or **Codex**) and, if an agent will implement, which stack. That writes `req0.json`. Set `"implement": false` when Req0 should not own Implement.
+First run asks how code should be written (**I’ll write the code**, **Cursor**, **Copilot**, **Claude**, or **Codex**) and, if an agent will implement, which stack. That writes `req0.json` at the product repo root. Edit that file later: `"implement": false` turns Implement off (same as **I’ll write the code**); `"adapter": "cursor"` (or `copilot`, `claude`, `codex`) records which CLI to launch.
 
 Copy names-only env vars into `.env` as needed. Do not put secrets in `.env.example`.
 
