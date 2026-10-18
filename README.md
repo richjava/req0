@@ -69,6 +69,8 @@ First run asks how code should be written (**I’ll write the code**, **Cursor**
 
 House standards (optional freeform markdown) live at `docs/requirement-standards/pack.md` and `document.md`. Authoring, Improve, and Implement **Read** those files and follow them in substance while still emitting frozen `requirement.md` grammar. Point `req0.json` at other paths with `"standards": { "pack": "…", "document": "…" }`. Missing files fall back to the copies shipped with the package. Jev scores the pack against that house style as Ready **nits** only — they do not block Implement.
 
+The as-built schema map is `docs/system.md` at the product root (override with `"system"` in `req0.json`). Every Implement **plans first**: the agent Reads that map, writes `derived/implement-plan.md`, and asks if a schema change has implications. Continue / Skip answers land under Decisions. Coding starts only after that round closes. Each accepted plan is copied to `derived/plans/<timestamp>.md`. After Build succeeded, the coding agent updates `docs/system.md`. Missing map is fine on the first pass. Off when Implement is off. Prove still checks the app against the spec, not the plan.
+
 Copy names-only env vars into `.env` as needed. Do not put secrets in `.env.example`.
 
 | Variable | Used for |

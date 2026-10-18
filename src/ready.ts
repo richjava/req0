@@ -48,12 +48,14 @@ export function evaluateBuild(spec: SpecAst | null, run: BuildRun | null): Build
         state: "running",
         adapter: run.adapter,
         message: run.message,
+        ...(run.phase ? { phase: run.phase } : {}),
       };
     }
     return {
       state: "failed",
       adapter: run.adapter,
       message: IMPLEMENT_INTERRUPTED,
+      ...(run.phase ? { phase: run.phase } : {}),
     };
   }
   return {
@@ -61,6 +63,7 @@ export function evaluateBuild(spec: SpecAst | null, run: BuildRun | null): Build
     adapter: run.adapter,
     message: run.message,
     ...(run.ignored ? { ignored: true } : {}),
+    ...(run.phase ? { phase: run.phase } : {}),
   };
 }
 
@@ -319,6 +322,9 @@ function goingCopy(health: Health, ready: ReadyMeter): string {
     }
     if (health.build.state === "running") {
       const agent = adapterDisplayName(health.build.adapter ?? "cursor");
+      if (health.build.phase === "plan") {
+        return `${agent} agent is planning this implement pass. Stop ends the run.`;
+      }
       return `${agent} agent is running. Activity shows tools and messages as they happen. Stop ends the run. Build Succeeded is not proof the app boots.`;
     }
     if (health.build.state === "stale") return "Spec changed after the last implement run. Build is stale.";

@@ -2,6 +2,7 @@
 
 Portable coding-agent brief. Read this file, then the compiled `derived/spec.json`. Do not invent rule, use-case, or role IDs.
 Read the house pack and document standards listed below. Satisfy them in substance. The spec already uses frozen grammar; do not rename IDs or headings.
+Read the accepted `derived/implement-plan.md` and the product `docs/system.md` (as-built map). After this pass lands, update the system map. Do not treat the map as the spec.
 
 ## Stack
 
@@ -141,6 +142,11 @@ An invoice belongs to exactly one department. It has status Unpaid or Approved, 
 
 The assigned approver must be a manager whose department equals the invoice's department. Role-level `approve-invoice` allow for Manager is further restricted by BR-001, BR-004, and BR-005.
 
+## System map
+
+`docs/system.md` does not exist yet. This is the first map. Propose entities in the plan; the coding agent writes the file after a successful Implement.
+Recommended headings (not compiled): Entities, Relationships, Notes. Optional mermaid is illustration only.
+
 ## House standards
 
 Read both files. Satisfy them in **substance**. Emit **frozen grammar** (the required and optional `##` headings, `BR-NNN` / `UC-NNN`, and matrix `allow`/`deny`). Do not copy these files into the pack. Do not emit headings the compiler rejects.
@@ -250,7 +256,7 @@ Do not put secrets in this file.
 }
 ~~~~
 
-Set `channel` to `author` when filling a new pack from a description, `improve` when patching after Ready, or `implement` when writing product code.
+Set `channel` to `author` when filling a new pack from a description, `improve` when patching after Ready, `plan` when proposing a schema delta before coding, or `implement` when writing product code.
 
 ## Security baseline
 

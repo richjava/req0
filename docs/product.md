@@ -28,8 +28,10 @@ Jev (TypeSafe System One) judges a frozen catalog when you set `TYPESAFE_API_KEY
 | `fixtures/personas.yaml` | Test users per role (stub allowed until Ready/QA) |
 | `fixtures/runtime.yaml` | Where the app is and how to log in (Create/Implement write a stub if missing) |
 | `derived/proof-report.md` | Last Prove, written for a QA reader (same UC- IDs as the pack) |
-| `req0.json` | Product-repo policy: stack, adapter, whether Req0 owns Implement (`"implement": false` skips that stage), and optional `"standards"` paths |
+| `req0.json` | Product-repo policy: stack, adapter, whether Req0 owns Implement (`"implement": false` skips that stage), optional `"standards"` paths, and optional `"system"` path |
 | `docs/requirement-standards/` | House pack/document prose. Not compiled. Missing files use the copies shipped with the package |
+| `docs/system.md` | As-built schema map. Not compiled. First Implement may create it |
+| `derived/implement-plan.md` | Working plan for this Implement pass. Snapshots in `derived/plans/` |
 | `.env.example` | Names only. Written if missing when `amplify-gen2` is recorded. Copy to `.env`; do not put real keys in the example |
 
 If the markdown cannot be compiled, nothing downstream should guess. Invalid specs fail with a line number.

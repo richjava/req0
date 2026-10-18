@@ -233,6 +233,8 @@ export type Req0Config = {
   implement?: boolean;
   /** Product-repo house standards. Paths are relative to the product root. */
   standards?: { pack?: string; document?: string };
+  /** Product-repo as-built schema map. Relative to the product root. Default docs/system.md. */
+  system?: string;
 };
 
 export type ProductRepo = {
@@ -258,6 +260,8 @@ export type BuildMeter = {
   message?: string;
   /** Owner ignored a failed Build so Prove can run. */
   ignored?: boolean;
+  /** Plan vs coding. Not a top-level health.json key. */
+  phase?: "plan" | "code";
 };
 
 export type BuildRun = {
@@ -274,6 +278,8 @@ export type BuildRun = {
   waitingOnQuestions?: boolean;
   /** This run was Fix from proof. Used when resuming after answers. */
   fromProof?: boolean;
+  /** Planner vs coding agent. Not a health.json key. */
+  phase?: "plan" | "code";
 };
 
 export type ProofState = "not_yet" | "passed" | "failed" | "needs_review" | "stale";

@@ -257,7 +257,13 @@ export function computeStages(health: Health, ready: ReadyMeter): StageBoard {
     ? {
         id: "implement",
         label:
-          health.build.state === "running" ? "Implementing" : neverSucceeded ? "Implement" : "Reimplement",
+          health.build.state === "running"
+            ? health.build.phase === "plan"
+              ? "Planning"
+              : "Implementing"
+            : neverSucceeded
+              ? "Implement"
+              : "Reimplement",
         enabled: readyOk && health.build.state !== "running" && !needsStack,
         hint: needsStack
           ? STACK_CHOICE_HINT
@@ -266,7 +272,7 @@ export function computeStages(health: Health, ready: ReadyMeter): StageBoard {
             : health.build.state === "failed"
             ? health.build.message
             : neverSucceeded
-              ? `Starts a ${agent} agent with derived/implement-brief.md.`
+              ? `Plans this pass, then starts a ${agent} agent with derived/implement-brief.md.`
               : health.build.message,
       }
     : {

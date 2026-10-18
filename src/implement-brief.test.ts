@@ -46,6 +46,7 @@ describe("emitImplementBrief", () => {
     expect(brief).toContain("amplify-gen2");
     expect(brief).toContain("docs/requirement-standards/pack.md");
     expect(brief).toContain("House standards");
+    expect(brief).toContain("docs/system.md");
     expect(brief).not.toContain("## AWS");
     expect(brief).not.toContain("test-only-not-production");
   });

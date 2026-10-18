@@ -143,6 +143,17 @@ describe("implementPack", () => {
       const run = JSON.parse(await readFile(paths.buildRun, "utf8"));
       expect(run.state).toBe("succeeded");
       expect(run.adapter).toBe("manual");
+      expect(run.phase).toBe("code");
+      expect(await readFile(paths.implementPlan, "utf8")).toContain("Implement plan");
+      const planState = JSON.parse(await readFile(paths.implementPlanState, "utf8"));
+      expect(planState.status).toBe("accepted");
+      expect(planState.snapshot).toMatch(/^derived\/plans\/.+\.md$/);
+      expect(await readFile(path.join(paths.root, planState.snapshot), "utf8")).toContain("Implement plan");
+      const firstSnapshot = planState.snapshot;
+      await implementPack(paths, { adapter: "manual" });
+      const nextState = JSON.parse(await readFile(paths.implementPlanState, "utf8"));
+      expect(nextState.snapshot).not.toBe(firstSnapshot);
+      expect(await readFile(path.join(paths.root, firstSnapshot), "utf8")).toContain("Implement plan");
       await expect(implementPack(paths, { adapter: "manual", fromProof: true })).rejects.toBeInstanceOf(
         FixFromProofLockedError,
       );
@@ -266,6 +277,7 @@ login:
       expect(compiled.health.nextAction.enabled).toBe(true);
       await expect(implementPack(paths, { adapter: "manual" })).rejects.toBeInstanceOf(ImplementDisabledError);
       await expect(readFile(paths.buildRun, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(paths.implementPlan, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
       const proved = await provePack(paths, {
         client: createMockJevClient(),
         waitForUrl: async () => true,
@@ -478,6 +490,40 @@ const OPEN_QUESTIONS = {
 };
 
 describe("agent questions lifecycle", () => {
+  it("does not stamp Build succeeded when plan questions are open", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "req0-plan-q-"));
+    const root = path.join(parent, "docs/requirements/demo-pack");
+    try {
+      const paths = await createPack(root);
+      await writeAgentQuestions(paths, { ...OPEN_QUESTIONS, channel: "plan" });
+      await writeFile(
+        paths.buildRun,
+        `${JSON.stringify({
+          specHash: "x",
+          state: "running",
+          adapter: "cursor",
+          at: "2026-10-18T09:00:00.000Z",
+          phase: "plan",
+        })}\n`,
+        "utf8",
+      );
+      const done = await finishImplement(
+        paths,
+        { ok: true, message: "planner finished", finished: Promise.resolve({ code: 0 }) },
+        "cursor",
+      );
+      expect(done.message).toBe(AGENT_QUESTIONS_WAITING);
+      expect(done.result.health.build.state).toBe("running");
+      expect(done.result.health.build.phase).toBe("plan");
+      const run = JSON.parse(await readFile(paths.buildRun, "utf8"));
+      expect(run.waitingOnQuestions).toBe(true);
+      expect(run.phase).toBe("plan");
+      expect(JSON.parse(await readFile(paths.implementPlanState, "utf8")).status).toBe("waiting_questions");
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
   it("does not stamp Build succeeded when questions are open", async () => {
     const parent = await mkdtemp(path.join(os.tmpdir(), "req0-questions-finish-"));
     const root = path.join(parent, "docs/requirements/demo-pack");

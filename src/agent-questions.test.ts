@@ -89,6 +89,7 @@ describe("agent questions", () => {
       ],
     });
     expect(artifact?.channel).toBe("author");
+    expect(parseAgentQuestions({ ...openRound, channel: "plan" })?.channel).toBe("plan");
     const uploaded = applyAnswers(artifact!, { shot: "approval.png" });
     expect(uploaded.questions[0]?.answer).toEqual({ artifact: "approval.png" });
     expect(formatOwnerAnswers(uploaded)).toContain("context/approval.png");

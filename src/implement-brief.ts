@@ -1,6 +1,7 @@
 import type { PersonasResult } from "./personas.js";
 import { questionsBriefSection } from "./agent-questions.js";
 import { standardsBriefSection, type LoadedStandards } from "./standards.js";
+import { systemMapBriefSection, type LoadedSystemMap } from "./system-map.js";
 import { DEFAULT_STACK, isAmplifyStack, stackInstruction } from "./stack.js";
 import type { AdapterId, ProductRepo, SpecAst, StackChoice } from "./types.js";
 
@@ -10,6 +11,7 @@ export function emitImplementBrief(input: {
   adapter: AdapterId;
   personas?: PersonasResult;
   standards?: LoadedStandards | null;
+  system?: LoadedSystemMap | null;
 }): string {
   const { spec, repo, adapter, personas } = input;
   const lines: string[] = [
@@ -17,6 +19,7 @@ export function emitImplementBrief(input: {
     "",
     "Portable coding-agent brief. Read this file, then the compiled `derived/spec.json`. Do not invent rule, use-case, or role IDs.",
     "Read the house pack and document standards listed below. Satisfy them in substance. The spec already uses frozen grammar; do not rename IDs or headings.",
+    "Read the accepted `derived/implement-plan.md` and the product `docs/system.md` (as-built map). After this pass lands, update the system map. Do not treat the map as the spec.",
     "",
     "## Stack",
     "",
@@ -114,6 +117,7 @@ export function emitImplementBrief(input: {
     }
   }
 
+  lines.push(...systemMapBriefSection(input.system));
   lines.push(...standardsBriefSection(input.standards));
 
   lines.push(

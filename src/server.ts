@@ -479,10 +479,12 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
           "ok",
           answered.channel === "author" ? "author" : "implement",
         );
-        if (answered.launch?.finished) {
+          if (answered.launch?.finished) {
           state.busy =
             answered.channel === "author" ? "author" : answered.channel === "improve" ? "improve" : "implement";
-          if (answered.channel === "implement") state.implementLaunch = answered.launch;
+          if (answered.channel === "implement" || answered.channel === "plan") {
+            state.implementLaunch = answered.launch;
+          }
           if (answered.channel === "author") state.authorLaunch = answered.launch;
           await yieldEventLoop();
           await sendJson(res, {
@@ -490,7 +492,7 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
             started: true,
             message: answered.message,
           });
-          if (answered.channel === "implement") {
+          if (answered.channel === "implement" || answered.channel === "plan") {
             void runImplement(state, state.pack, answered.launch, adapter);
           } else if (answered.channel === "author") {
             void runAuthor(state, state.pack, answered.launch, adapter);
@@ -525,7 +527,7 @@ async function handle(state: AppState, req: IncomingMessage, res: ServerResponse
         );
         state.last = discarded.result;
         state.busy = null;
-        if (discarded.channel === "implement") state.implementLaunch = null;
+        if (discarded.channel === "implement" || discarded.channel === "plan") state.implementLaunch = null;
         if (discarded.channel === "author") state.authorLaunch = null;
         pushActivity(
           state,
@@ -815,16 +817,26 @@ async function runImplement(
   launch: LaunchAdapterResult,
   adapter: AdapterId,
 ): Promise<void> {
+  let current: LaunchAdapterResult | undefined = launch;
   try {
-    const done = await finishImplement(pack, launch, adapter);
-    if (state.pack?.root === pack.root) state.last = done.result;
-    const waiting = done.message === AGENT_QUESTIONS_WAITING;
-    pushActivity(state, done.message, done.result.health.build.state === "failed" ? "error" : waiting ? "info" : "ok");
+    while (current) {
+      const tracked = current;
+      const done = await finishImplement(pack, tracked, adapter);
+      if (state.pack?.root === pack.root) state.last = done.result;
+      const waiting = done.message === AGENT_QUESTIONS_WAITING;
+      pushActivity(state, done.message, done.result.health.build.state === "failed" ? "error" : waiting ? "info" : "ok");
+      if (done.launch?.finished) {
+        state.implementLaunch = done.launch;
+        current = done.launch;
+        continue;
+      }
+      current = undefined;
+    }
   } catch (err) {
     pushActivity(state, err instanceof Error ? err.message : "Implement failed.", "error");
   } finally {
     if (state.busy === "implement") state.busy = null;
-    if (state.implementLaunch === launch) state.implementLaunch = null;
+    if (state.implementLaunch === launch || !current) state.implementLaunch = null;
   }
 }
 
@@ -871,7 +883,7 @@ function discardedLaunch(
   channel: string | undefined,
 ): LaunchAdapterResult | null {
   if (channel === "author") return state.authorLaunch;
-  if (channel === "implement") return state.implementLaunch;
+  if (channel === "implement" || channel === "plan") return state.implementLaunch;
   return state.implementLaunch;
 }
 
