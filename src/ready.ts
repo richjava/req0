@@ -48,12 +48,14 @@ export function evaluateBuild(spec: SpecAst | null, run: BuildRun | null): Build
         state: "running",
         adapter: run.adapter,
         message: run.message,
+        ...(run.phase ? { phase: run.phase } : {}),
       };
     }
     return {
       state: "failed",
       adapter: run.adapter,
       message: IMPLEMENT_INTERRUPTED,
+      ...(run.phase ? { phase: run.phase } : {}),
     };
   }
   return {
@@ -61,6 +63,7 @@ export function evaluateBuild(spec: SpecAst | null, run: BuildRun | null): Build
     adapter: run.adapter,
     message: run.message,
     ...(run.ignored ? { ignored: true } : {}),
+    ...(run.phase ? { phase: run.phase } : {}),
   };
 }
 
@@ -234,6 +237,16 @@ export function evaluateReady(input: {
         });
       }
     }
+
+    for (const answer of run.answers) {
+      if (!answer.id.startsWith("std.") || typeof answer.noul !== "number") continue;
+      classifyStandardsNoul(findings, {
+        id: `ready.${answer.id}`,
+        noul: answer.noul,
+        failMessage: `${answer.id} does not meet the house standard (noul ${fmt(answer.noul)}).`,
+        uncertainMessage: `${answer.id} is uncertain against the house standard (noul ${fmt(answer.noul)}).`,
+      });
+    }
   }
 
   const blockers = findings.filter((finding) => finding.severity === "blocker").length;
@@ -309,6 +322,9 @@ function goingCopy(health: Health, ready: ReadyMeter): string {
     }
     if (health.build.state === "running") {
       const agent = adapterDisplayName(health.build.adapter ?? "cursor");
+      if (health.build.phase === "plan") {
+        return `${agent} agent is planning this implement pass. Stop ends the run.`;
+      }
       return `${agent} agent is running. Activity shows tools and messages as they happen. Stop ends the run. Build Succeeded is not proof the app boots.`;
     }
     if (health.build.state === "stale") return "Spec changed after the last implement run. Build is stale.";
@@ -321,6 +337,25 @@ function goingCopy(health: Health, ready: ReadyMeter): string {
     return "The pack is valid. Ready stays Not yet until a TypeSafe API key is set. Persona checks do not need a key.";
   }
   return "The pack is valid. Check it with Jev to turn on Ready.";
+}
+
+function classifyStandardsNoul(
+  findings: ReadyFinding[],
+  input: {
+    id: string;
+    noul: number;
+    failMessage: string;
+    uncertainMessage: string;
+  },
+): void {
+  if (input.noul >= NOUL_PASS) return;
+  findings.push({
+    id: input.id,
+    kind: "standards",
+    severity: "nit",
+    message: input.noul <= NOUL_FAIL ? input.failMessage : input.uncertainMessage,
+    noul: input.noul,
+  });
 }
 
 function classifyNoul(

@@ -10,6 +10,11 @@ export const OPTIONAL_H2 = [
   "Open questions",
   "Entities",
   "UI notes",
+  "Definitions",
+  "Data Definition",
+  "Verification Scenarios",
+  "Related Requirements",
+  "Implementation Notes",
 ] as const;
 
 export type RequiredH2 = (typeof REQUIRED_H2)[number];
@@ -156,6 +161,7 @@ export type ReadyFindingKind =
   | "matrix_contradiction"
   | "pack_gate"
   | "section_score"
+  | "standards"
   | "uncertain";
 
 export type ReadyFinding = {
@@ -225,6 +231,10 @@ export type Req0Config = {
   stack?: StackChoice;
   /** When false, Req0 does not own Implement. Prove uses Ready + runtime.yaml. */
   implement?: boolean;
+  /** Product-repo house standards. Paths are relative to the product root. */
+  standards?: { pack?: string; document?: string };
+  /** Product-repo as-built schema map. Relative to the product root. Default docs/system.md. */
+  system?: string;
 };
 
 export type ProductRepo = {
@@ -250,6 +260,8 @@ export type BuildMeter = {
   message?: string;
   /** Owner ignored a failed Build so Prove can run. */
   ignored?: boolean;
+  /** Plan vs coding. Not a top-level health.json key. */
+  phase?: "plan" | "code";
 };
 
 export type BuildRun = {
@@ -266,6 +278,8 @@ export type BuildRun = {
   waitingOnQuestions?: boolean;
   /** This run was Fix from proof. Used when resuming after answers. */
   fromProof?: boolean;
+  /** Planner vs coding agent. Not a health.json key. */
+  phase?: "plan" | "code";
 };
 
 export type ProofState = "not_yet" | "passed" | "failed" | "needs_review" | "stale";

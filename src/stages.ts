@@ -54,6 +54,11 @@ export const SECTION_PURPOSES: Record<string, string> = {
   "Open questions": "Optional. Unresolved questions for the owner.",
   Entities: "Optional. Named things the spec talks about.",
   "UI notes": "Optional. Presentation hints that are not rules.",
+  Definitions: "Optional glossary. Not business rules.",
+  "Data Definition": "Optional. Records, uniqueness, derived fields — not behaviour.",
+  "Verification Scenarios": "Optional. How a person would check the pack.",
+  "Related Requirements": "Optional pointers to other packs. Do not restate this pack's rules.",
+  "Implementation Notes": "Optional builder hints. No hidden acceptance criteria.",
 };
 
 export function sectionCatalog(): { name: string; required: boolean; purpose: string }[] {
@@ -252,7 +257,13 @@ export function computeStages(health: Health, ready: ReadyMeter): StageBoard {
     ? {
         id: "implement",
         label:
-          health.build.state === "running" ? "Implementing" : neverSucceeded ? "Implement" : "Reimplement",
+          health.build.state === "running"
+            ? health.build.phase === "plan"
+              ? "Planning"
+              : "Implementing"
+            : neverSucceeded
+              ? "Implement"
+              : "Reimplement",
         enabled: readyOk && health.build.state !== "running" && !needsStack,
         hint: needsStack
           ? STACK_CHOICE_HINT
@@ -261,7 +272,7 @@ export function computeStages(health: Health, ready: ReadyMeter): StageBoard {
             : health.build.state === "failed"
             ? health.build.message
             : neverSucceeded
-              ? `Starts a ${agent} agent with derived/implement-brief.md.`
+              ? `Plans this pass, then starts a ${agent} agent with derived/implement-brief.md.`
               : health.build.message,
       }
     : {

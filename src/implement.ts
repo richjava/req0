@@ -93,8 +93,10 @@ export function implementPrompt(briefPath: string, stackId?: string): string {
       : "";
   return [
     "Implement this requirement from the brief.",
-    `Read ${briefPath} and derived/spec.json.`,
+    `Read ${briefPath}, derived/implement-plan.md, derived/spec.json, and docs/system.md if it exists.`,
+    "Follow the accepted implement plan. Read the house standards listed in the brief. Satisfy them in substance. Do not rename spec IDs or headings.",
     "Do not invent spec IDs. Implement only the named BR- and UC- IDs.",
+    "After the change lands, update docs/system.md to match what you built (Entities, Relationships, Notes). A failed run is not as-built.",
     "If a required decision is missing, write derived/agent-questions.json and stop. Do not guess stack, auth, storage, or owner-facing copy. Do not write product code in that same turn.",
     "If this product repo has no customer app, use the stack recorded in req0.json.",
     "Seed the app from existing fixtures/personas.yaml. Do not invent personas.",
@@ -111,10 +113,11 @@ export function implementPrompt(briefPath: string, stackId?: string): string {
 export function fixFromProofPrompt(briefPath: string, reportPath: string, implementBriefPath: string): string {
   return [
     "Fix the existing product from the last Prove.",
-    `Read ${briefPath}, then ${reportPath}, then ${implementBriefPath}.`,
+    `Read ${briefPath}, then ${reportPath}, then ${implementBriefPath}, then derived/implement-plan.md and docs/system.md if it exists.`,
     "Close only the Failed and Needs review cases. Do not invent spec IDs.",
     "If a required decision is missing, write derived/agent-questions.json and stop. Do not guess. Do not write product code in that same turn.",
     "Do not edit requirement.md. Do not scaffold a second application.",
+    "After the change lands, update docs/system.md to match what you built. A failed run is not as-built.",
     "Boot or Sign-in observations may be fixtures or runtime.yaml, not a missing control.",
     "Do not treat this launch as proof the app boots.",
     `At most ${IMPLEMENT_SANDBOX_MAX} npx ampx sandbox --once deploys in this run. After the third, stop and tell the owner what is still failing. Do not start a fourth.`,
@@ -125,6 +128,7 @@ export function improvePrompt(briefPath: string): string {
   return [
     "Improve this requirement pack from the brief.",
     `Read ${briefPath} and requirement.md.`,
+    "Read the house standards listed in the brief. Satisfy them in substance; emit frozen grammar.",
     "Patch requirement.md only. If the brief asks for a persona, you may also edit fixtures/personas.yaml.",
     "Outcome is what a person sees. Do not paste matrix allow/deny cells into Outcome. Look for is deny; Choose is allow.",
     "Do not invent spec IDs. Do not implement the product app.",

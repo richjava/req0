@@ -17,6 +17,9 @@ docs/requirements/<requirement-id>/
     health.json
     status.md
     implement-brief.md     # Milestone 3
+    implement-plan.md      # working Implement plan for this pass
+    implement-plan.json    # host plan status
+    plans/<timestamp>.md   # snapshot of each accepted plan
     jev-pack.json          # Milestone 2
     jev-run.json           # cached Jev answers (spec-hash)
     build-run.json         # last implement launch
@@ -34,8 +37,31 @@ docs/requirements/<requirement-id>/
   - `Business Rules`
   - `Use Cases`
   - `Roles & Permissions`
-- Optional `##` titles, exact strings only: `Overview`, `Out of scope`, `Open questions`, `Entities`, `UI notes`.
+- Optional `##` titles, exact strings only: `Overview`, `Out of scope`, `Open questions`, `Entities`, `UI notes`, `Definitions`, `Data Definition`, `Verification Scenarios`, `Related Requirements`, `Implementation Notes`.
+- Optional sections are opaque prose (like Overview). They are not a second AST.
 - Any other `##` is a compile error.
+
+House style for packs lives at the **product repo** root, not inside a pack:
+
+```text
+docs/requirement-standards/pack.md
+docs/requirement-standards/document.md
+```
+
+Those files are freeform markdown. Req0 does not compile them. Override paths in `req0.json`:
+
+```json
+{
+  "standards": {
+    "pack": "docs/requirement-standards/pack.md",
+    "document": "docs/requirement-standards/document.md"
+  }
+}
+```
+
+Missing or empty house files fall back to the copies shipped with `@richjava/req0`. Artifacts stay in the pack’s `context/` folder (`UC-001__replace-modal.png`), not an `Artifacts/` tree. IDs stay `BR-001` / `UC-001`. Matrix cells stay `allow` / `deny`.
+
+The as-built schema map is `docs/system.md` at the product root (`req0.json` `"system"` to override). Req0 does not compile it. Recommended headings: Entities, Relationships, Notes. Every Implement writes a working `derived/implement-plan.md`; accepted passes are copied to `derived/plans/<timestamp>.md`. Those files are not the spec. Prove stays app-vs-`requirement.md`.
 
 ## Business rule
 

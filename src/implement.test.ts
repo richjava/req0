@@ -78,6 +78,9 @@ describe("implement lock", () => {
   });
 
   it("puts the brief path in the Cursor agent prompt", () => {
+    expect(implementPrompt("/repo/derived/implement-brief.md")).toContain("house standards");
+    expect(implementPrompt("/repo/derived/implement-brief.md")).toContain("implement-plan.md");
+    expect(implementPrompt("/repo/derived/implement-brief.md")).toContain("docs/system.md");
     expect(implementPrompt("/repo/derived/implement-brief.md")).toContain("agent-questions.json");
     expect(implementPrompt("/repo/derived/implement-brief.md")).toContain("/repo/derived/implement-brief.md");
     expect(implementPrompt("/repo/derived/implement-brief.md")).toContain("fixtures/runtime.yaml");

@@ -192,6 +192,67 @@ Outcome: o
     expect(result.health.spec.findings.some((f) => f.message.includes("Duplicate id BR-001"))).toBe(true);
   });
 
+  it("compiles optional house headings as opaque prose", () => {
+    const result = compileMarkdown(
+      "x",
+      `# Title
+
+## Overview
+
+Intent.
+
+## Definitions
+
+Approver: a manager.
+
+## Data Definition
+
+Invoice id is unique.
+
+## Business Rules
+
+### A
+Id: BR-001
+Statement: s
+Observable: o
+
+## Use Cases
+
+### B
+Id: UC-001
+Actor: Viewer
+Preconditions: p
+Steps:
+1. Open list
+Outcome: List is visible.
+
+## Roles & Permissions
+
+| Action | Viewer |
+| --- | --- |
+| view-invoice | allow |
+
+## Verification Scenarios
+
+Viewer opens the list.
+
+## Related Requirements
+
+None.
+
+## Implementation Notes
+
+Use existing list page.
+`,
+    );
+    expect(result.health.spec.findings).toEqual([]);
+    expect(result.spec?.optional.Definitions).toContain("Approver");
+    expect(result.spec?.optional["Data Definition"]).toContain("unique");
+    expect(result.spec?.optional["Verification Scenarios"]).toContain("Viewer");
+    expect(result.spec?.optional["Related Requirements"]).toContain("None");
+    expect(result.spec?.optional["Implementation Notes"]).toContain("list page");
+  });
+
   it("treats the empty template as drafting, not valid", () => {
     const result = compileMarkdown("new-thing", EMPTY_TEMPLATE);
     expect(result.health.spec.state).toBe("drafting");

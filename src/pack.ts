@@ -19,8 +19,24 @@ import { assertImproveAllowed, emitImproveBrief, improveFindings } from "./impro
 import { clearImproveLog, readImproveLog, recordImprovePending } from "./improve-log.js";
 import { beginImproveReview, ImproveReviewPendingError, readImproveSnapshot, rejectImproveReview } from "./improve-review.js";
 import { emitImplementBrief } from "./implement-brief.js";
+import {
+  appendPlanDecisions,
+  emitImplementPlanBrief,
+  IMPLEMENT_PLAN_BRIEF_FILE,
+  IMPLEMENT_PLAN_FILE,
+  IMPLEMENT_PLAN_STATE_FILE,
+  IMPLEMENT_PLANS_DIR,
+  implementPlanPrompt,
+  MANUAL_STUB_PLAN,
+  readImplementPlanMarkdown,
+  readImplementPlanState,
+  snapshotAcceptedPlan,
+  writeImplementPlanState,
+} from "./implement-plan.js";
+import { loadSystemMap } from "./system-map.js";
 import { hasJevAccess, JevRequestError, JevUnavailableError, resolveJevClient, type JevClient } from "./jev.js";
 import { emitJevPack } from "./jev-pack.js";
+import { loadStandards } from "./standards.js";
 import { parsePersonasYaml, type PersonasResult } from "./personas.js";
 import { emitProofReport } from "./proof-report.js";
 import { emitQaPlan, emitQaPlanYaml } from "./qa-plan.js";
@@ -49,6 +65,7 @@ import { parseRuntimeYaml, type RuntimeResult } from "./runtime.js";
 import {
   inspectProductRepo,
   needsStackChoice,
+  readReq0Config,
   resolveStackId,
   StackRequiredError,
   UnknownStackError,
@@ -120,6 +137,10 @@ export type PackPaths = {
   context: string;
   authorBrief: string;
   authorRun: string;
+  implementPlan: string;
+  implementPlanState: string;
+  implementPlanBrief: string;
+  implementPlans: string;
 };
 
 export function packPaths(root: string): PackPaths {
@@ -151,12 +172,17 @@ export function packPaths(root: string): PackPaths {
     context: path.join(root, "context"),
     authorBrief: path.join(derived, AUTHOR_BRIEF_FILE),
     authorRun: path.join(derived, AUTHOR_RUN_FILE),
+    implementPlan: path.join(derived, IMPLEMENT_PLAN_FILE),
+    implementPlanState: path.join(derived, IMPLEMENT_PLAN_STATE_FILE),
+    implementPlanBrief: path.join(derived, IMPLEMENT_PLAN_BRIEF_FILE),
+    implementPlans: path.join(derived, IMPLEMENT_PLANS_DIR),
   };
 }
 
 export async function withRememberedAnswers(paths: PackPaths, prompt: string): Promise<string> {
   const round = await readAgentQuestions(paths);
-  if (!round || round.status !== "answered" || round.channel !== "implement") return prompt;
+  if (!round || round.status !== "answered") return prompt;
+  if (round.channel !== "implement" && round.channel !== "plan") return prompt;
   return withOwnerAnswers(prompt, round);
 }
 
@@ -282,9 +308,18 @@ export async function loadPersonas(paths: PackPaths): Promise<PersonasResult> {
 export async function compilePack(paths: PackPaths): Promise<CompileResult> {
   const markdown = await readMarkdown(paths);
   let result = compileMarkdown(paths.id, markdown);
-  if (result.spec) result = { ...result, jevPack: emitJevPack(result.spec) };
   const personas = await loadPersonas(paths);
   const repo = await inspectProductRepo(paths.root);
+  const config = repo.root ? await readReq0Config(repo.root) : null;
+  const standards = await loadStandards(repo.root, config);
+  const system = await loadSystemMap(repo.root, config);
+  const contextFiles = await listContextFiles(paths);
+  if (result.spec) {
+    result = {
+      ...result,
+      jevPack: emitJevPack(result.spec, { markdown, contextFiles, standards }),
+    };
+  }
   if (repo.root && repo.recorded) {
     await writeAmplifyEnvExampleIfMissing(repo.root, repo.stack);
   }
@@ -296,6 +331,8 @@ export async function compilePack(paths: PackPaths): Promise<CompileResult> {
         repo,
         adapter: repo.adapter,
         personas,
+        standards,
+        system,
       }),
     };
   }
@@ -322,6 +359,8 @@ export async function compilePack(paths: PackPaths): Promise<CompileResult> {
       adapter: buildRun.adapter,
       at: new Date().toISOString(),
       message: IMPLEMENT_INTERRUPTED,
+      ...(buildRun.fromProof ? { fromProof: true } : {}),
+      ...(buildRun.phase ? { phase: buildRun.phase } : {}),
     });
   }
   const latestBuildRun = await readBuildRun(paths);
@@ -489,23 +528,28 @@ async function readBuildRun(paths: PackPaths): Promise<BuildRun | null> {
   }
 }
 
+type ImplementLaunchOptions = {
+  adapter?: AdapterId;
+  stack?: string;
+  fromProof?: boolean;
+  onLogLine?: (line: string) => void;
+  extraPrompt?: string;
+  resume?: boolean;
+  /** Resume the coding agent after implement-channel questions. */
+  code?: boolean;
+};
+
 export async function implementPack(
   paths: PackPaths,
-  options: {
-    adapter?: AdapterId;
-    stack?: string;
-    fromProof?: boolean;
-    onLogLine?: (line: string) => void;
-    extraPrompt?: string;
-    resume?: boolean;
-  } = {},
+  options: ImplementLaunchOptions = {},
 ): Promise<{ result: CompileResult; message: string; launch?: LaunchAdapterResult }> {
   const compiled = await compilePack(paths);
   if (!options.resume && isOpenQuestions(await readAgentQuestions(paths))) {
     throw new AgentAnswersError("Answer the agent's questions, or Stop, before starting a new Implement.");
   }
   assertImplementAllowed(compiled);
-  if (options.fromProof && !options.resume) {
+  const fromProof = options.fromProof === true;
+  if (fromProof && !options.resume) {
     assertFixFromProofAllowed(compiled.health, compiled.health.ready);
     if (!compiled.spec) throw new FixFromProofLockedError();
   }
@@ -521,9 +565,181 @@ export async function implementPack(
     await writeReq0Config(repo.root, stack ? { adapter, stack } : { adapter });
     if (stack) await writeAmplifyEnvExampleIfMissing(repo.root, stack);
   }
+  const previous = await readBuildRun(paths);
+  const proof = fromProof || previous?.fromProof === true;
+  if (options.code || (options.resume && previous?.phase === "code")) {
+    return launchCodePhase(paths, {
+      compiled,
+      adapter,
+      stackId: stack?.id ?? repo.stack.id,
+      fromProof: proof,
+      extraPrompt: options.extraPrompt,
+      onLogLine: options.onLogLine,
+    });
+  }
+  return launchPlanPhase(paths, {
+    compiled,
+    adapter,
+    stackId: stack?.id ?? repo.stack.id,
+    fromProof: proof,
+    extraPrompt: options.extraPrompt,
+    onLogLine: options.onLogLine,
+    resume: options.resume === true,
+  });
+}
+
+async function writePlanBrief(paths: PackPaths, compiled: CompileResult, fromProof: boolean): Promise<void> {
+  if (!compiled.spec) return;
+  const repo = await inspectProductRepo(paths.root);
+  const config = repo.root ? await readReq0Config(repo.root) : null;
+  const brief = emitImplementPlanBrief({
+    spec: compiled.spec,
+    system: await loadSystemMap(repo.root, config),
+    standards: await loadStandards(repo.root, config),
+    fromProof,
+  });
+  await mkdir(paths.derived, { recursive: true });
+  await writeFile(paths.implementPlanBrief, brief, "utf8");
+}
+
+async function launchPlanPhase(
+  paths: PackPaths,
+  input: {
+    compiled: CompileResult;
+    adapter: AdapterId;
+    stackId: string;
+    fromProof: boolean;
+    extraPrompt?: string;
+    onLogLine?: (line: string) => void;
+    resume: boolean;
+  },
+): Promise<{ result: CompileResult; message: string; launch?: LaunchAdapterResult }> {
+  const { compiled, adapter } = input;
+  const repo = await inspectProductRepo(paths.root);
+  await writePlanBrief(paths, compiled, input.fromProof);
+  const specHashValue = compiled.spec ? specHash(compiled.spec) : "";
+  const at = new Date().toISOString();
+  await writeImplementPlanState(paths, {
+    version: 1,
+    specHash: specHashValue,
+    status: "running",
+    at,
+  });
+  let prompt = implementPlanPrompt(paths.implementPlanBrief);
+  if (input.resume) prompt = await withRememberedAnswers(paths, prompt);
+  if (input.extraPrompt) prompt = `${prompt}\n\n${input.extraPrompt}`;
+  const launch = await launchAdapter(adapter, repo.root, paths.implementPlanBrief, {
+    onLogLine: input.onLogLine,
+    prompt,
+  });
+  const following = launch.ok && adapterLaunchesAgent(adapter) && Boolean(launch.finished);
+  if (following) followImplementPid(launch.child?.pid);
+  await writeBuildRun(paths, {
+    specHash: specHashValue,
+    state: !launch.ok ? "failed" : following ? "running" : "running",
+    adapter,
+    at,
+    message: launch.message,
+    phase: "plan",
+    ...(following && launch.child?.pid ? { pid: launch.child.pid } : {}),
+    ...(input.fromProof ? { fromProof: true } : {}),
+  });
+  if (!launch.ok) {
+    await writeImplementPlanState(paths, {
+      version: 1,
+      specHash: specHashValue,
+      status: "failed",
+      at,
+    });
+    return { result: await compilePack(paths), message: launch.message, launch };
+  }
+  if (following) {
+    return { result: await compilePack(paths), message: launch.message, launch };
+  }
+  return settlePlanner(paths, adapter, { fromProof: input.fromProof, onLogLine: input.onLogLine, stackId: input.stackId });
+}
+
+async function settlePlanner(
+  paths: PackPaths,
+  adapter: AdapterId,
+  input: { fromProof: boolean; onLogLine?: (line: string) => void; stackId: string },
+): Promise<{ result: CompileResult; message: string; launch?: LaunchAdapterResult }> {
+  const compiled = await compilePack(paths);
+  const specHashValue = compiled.spec ? specHash(compiled.spec) : "";
+  const at = new Date().toISOString();
+  if (isOpenQuestions(await readAgentQuestions(paths))) {
+    await writeImplementPlanState(paths, {
+      version: 1,
+      specHash: specHashValue,
+      status: "waiting_questions",
+      at,
+    });
+    await writeBuildRun(paths, {
+      specHash: specHashValue,
+      state: "running",
+      adapter,
+      at,
+      message: AGENT_QUESTIONS_WAITING,
+      waitingOnQuestions: true,
+      phase: "plan",
+      ...(input.fromProof ? { fromProof: true } : {}),
+    });
+    return { result: await compilePack(paths), message: AGENT_QUESTIONS_WAITING };
+  }
+  let markdown = await readImplementPlanMarkdown(paths);
+  if (!markdown.trim()) {
+    if (!adapterLaunchesAgent(adapter)) {
+      await mkdir(paths.derived, { recursive: true });
+      await writeFile(paths.implementPlan, MANUAL_STUB_PLAN, "utf8");
+      markdown = MANUAL_STUB_PLAN;
+    }
+  }
+  if (!markdown.trim()) {
+    await writeImplementPlanState(paths, { version: 1, specHash: specHashValue, status: "failed", at });
+    await writeBuildRun(paths, {
+      specHash: specHashValue,
+      state: "failed",
+      adapter,
+      at,
+      message: "Planner finished without derived/implement-plan.md.",
+      phase: "plan",
+      ...(input.fromProof ? { fromProof: true } : {}),
+    });
+    return { result: await compilePack(paths), message: "Planner finished without derived/implement-plan.md." };
+  }
+  const snapshot = await snapshotAcceptedPlan(paths);
+  await writeImplementPlanState(paths, {
+    version: 1,
+    specHash: specHashValue,
+    status: "accepted",
+    at,
+    snapshot,
+  });
+  return launchCodePhase(paths, {
+    compiled,
+    adapter,
+    stackId: input.stackId,
+    fromProof: input.fromProof,
+    onLogLine: input.onLogLine,
+  });
+}
+
+async function launchCodePhase(
+  paths: PackPaths,
+  input: {
+    compiled: CompileResult;
+    adapter: AdapterId;
+    stackId: string;
+    fromProof: boolean;
+    extraPrompt?: string;
+    onLogLine?: (line: string) => void;
+  },
+): Promise<{ result: CompileResult; message: string; launch?: LaunchAdapterResult }> {
+  const { compiled, adapter } = input;
+  const repo = await inspectProductRepo(paths.root);
   let briefPath = paths.implementBrief;
-  let prompt = implementPrompt(paths.implementBrief, stack?.id ?? repo.stack.id);
-  if (options.fromProof && compiled.spec) {
+  let prompt = implementPrompt(paths.implementBrief, input.stackId);
+  if (input.fromProof && compiled.spec) {
     const brief = emitFixFromProofBrief({
       spec: compiled.spec,
       proof: compiled.health.proof,
@@ -536,21 +752,23 @@ export async function implementPack(
     prompt = fixFromProofPrompt(paths.fixFromProofBrief, paths.proofReport, paths.implementBrief);
   }
   prompt = await withRememberedAnswers(paths, prompt);
-  if (options.extraPrompt) prompt = `${prompt}\n\n${options.extraPrompt}`;
+  if (input.extraPrompt) prompt = `${prompt}\n\n${input.extraPrompt}`;
   const launch = await launchAdapter(adapter, repo.root, briefPath, {
-    onLogLine: options.onLogLine,
+    onLogLine: input.onLogLine,
     prompt,
   });
   const following = launch.ok && adapterLaunchesAgent(adapter) && Boolean(launch.finished);
   if (following) followImplementPid(launch.child?.pid);
+  const specHashValue = compiled.spec ? specHash(compiled.spec) : "";
   await writeBuildRun(paths, {
-    specHash: compiled.spec ? specHash(compiled.spec) : "",
+    specHash: specHashValue,
     state: !launch.ok ? "failed" : following ? "running" : "succeeded",
     adapter,
     at: new Date().toISOString(),
     message: launch.message,
+    phase: "code",
     ...(following && launch.child?.pid ? { pid: launch.child.pid } : {}),
-    ...(options.fromProof ? { fromProof: true } : {}),
+    ...(input.fromProof ? { fromProof: true } : {}),
   });
   return { result: await compilePack(paths), message: launch.message, launch };
 }
@@ -559,14 +777,24 @@ export async function finishImplement(
   paths: PackPaths,
   launch: LaunchAdapterResult,
   adapter: AdapterId,
-): Promise<{ result: CompileResult; message: string }> {
+): Promise<{ result: CompileResult; message: string; launch?: LaunchAdapterResult }> {
   const done = launch.finished ? await launch.finished : { code: launch.ok ? 0 : 1 };
   unfollowImplementPid(launch.child?.pid);
   const compiled = await compilePack(paths);
   const previous = await readBuildRun(paths);
   const stopped = launch.stop?.reason;
   const waiting = !stopped && isOpenQuestions(await readAgentQuestions(paths));
+  const fromProof = previous?.fromProof === true;
+  const phase = previous?.phase ?? "code";
   if (waiting) {
+    if (phase === "plan") {
+      await writeImplementPlanState(paths, {
+        version: 1,
+        specHash: compiled.spec ? specHash(compiled.spec) : previous?.specHash ?? "",
+        status: "waiting_questions",
+        at: new Date().toISOString(),
+      });
+    }
     await writeBuildRun(paths, {
       specHash: compiled.spec ? specHash(compiled.spec) : previous?.specHash ?? "",
       state: "running",
@@ -574,9 +802,40 @@ export async function finishImplement(
       at: new Date().toISOString(),
       message: AGENT_QUESTIONS_WAITING,
       waitingOnQuestions: true,
-      ...(previous?.fromProof ? { fromProof: true } : {}),
+      phase,
+      ...(fromProof ? { fromProof: true } : {}),
     });
     return { result: await compilePack(paths), message: AGENT_QUESTIONS_WAITING };
+  }
+  if (phase === "plan") {
+    const ok = !stopped && launch.ok && done.code === 0;
+    if (!ok) {
+      const name = adapterDisplayName(adapter);
+      const message = stopped
+        ? stopped
+        : `${name} agent exited (${done.code ?? "unknown"}). ${tailImplementLog(paths)}`.trim();
+      await writeImplementPlanState(paths, {
+        version: 1,
+        specHash: compiled.spec ? specHash(compiled.spec) : previous?.specHash ?? "",
+        status: "failed",
+        at: new Date().toISOString(),
+      });
+      await writeBuildRun(paths, {
+        specHash: compiled.spec ? specHash(compiled.spec) : "",
+        state: "failed",
+        adapter,
+        at: new Date().toISOString(),
+        message,
+        phase: "plan",
+        ...(fromProof ? { fromProof: true } : {}),
+      });
+      return { result: await compilePack(paths), message };
+    }
+    const repo = await inspectProductRepo(paths.root);
+    return settlePlanner(paths, adapter, {
+      fromProof,
+      stackId: repo.stack.id,
+    });
   }
   const ok = !stopped && launch.ok && done.code === 0;
   const name = adapterDisplayName(adapter);
@@ -591,7 +850,8 @@ export async function finishImplement(
     adapter,
     at: new Date().toISOString(),
     message,
-    ...(previous?.fromProof ? { fromProof: true } : {}),
+    phase: "code",
+    ...(fromProof ? { fromProof: true } : {}),
   });
   return { result: await compilePack(paths), message };
 }
@@ -621,12 +881,21 @@ export async function stopImplement(
   await clearAgentQuestions(paths);
   const compiled = await compilePack(paths);
   const previous = await readBuildRun(paths);
+  const plan = await readImplementPlanState(paths);
+  if (plan && plan.status !== "accepted") {
+    await writeImplementPlanState(paths, {
+      ...plan,
+      status: "failed",
+      at: new Date().toISOString(),
+    });
+  }
   await writeBuildRun(paths, {
     specHash: compiled.spec ? specHash(compiled.spec) : "",
     state: "failed",
     adapter: previous?.adapter ?? "cursor",
     at: new Date().toISOString(),
     message: reason,
+    phase: previous?.phase,
     ...(previous?.fromProof ? { fromProof: true } : {}),
   });
   return { result: await compilePack(paths), message: reason };
@@ -688,10 +957,13 @@ export async function writeImproveBrief(
   const result = compiled ?? (await compilePack(paths));
   assertImproveAllowed(result.health.ready);
   const findings = improveFindings(result.health.ready);
+  const repo = await inspectProductRepo(paths.root);
+  const config = repo.root ? await readReq0Config(repo.root) : null;
   const brief = emitImproveBrief({
     spec: result.spec,
     ready: result.health.ready,
     findings,
+    standards: await loadStandards(repo.root, config),
   });
   await mkdir(paths.derived, { recursive: true });
   await writeFile(paths.improveBrief, brief, "utf8");
@@ -738,6 +1010,7 @@ export async function writeAuthorBrief(
     siblings: await siblingSummaries(paths),
     product: productBriefBits(repo, await listProductLayout(repo.root)),
     contextFiles: await listContextFiles(paths),
+    standards: await loadStandards(repo.root, repo.root ? await readReq0Config(repo.root) : null),
   });
   await mkdir(paths.derived, { recursive: true });
   await writeFile(paths.authorBrief, brief, "utf8");
@@ -948,7 +1221,7 @@ export async function answerAgentQuestions(
 ): Promise<{
   result: CompileResult;
   message: string;
-  channel: "author" | "improve" | "implement";
+  channel: "author" | "improve" | "implement" | "plan";
   launch?: LaunchAdapterResult;
 }> {
   const open = await readAgentQuestions(paths);
@@ -957,6 +1230,9 @@ export async function answerAgentQuestions(
   }
   const answered = applyAnswers(open, answers, { skipAll: options.skipAll === true });
   await writeAgentQuestions(paths, answered);
+  if (answered.channel === "plan") {
+    await appendPlanDecisions(paths, answered);
+  }
   const extraPrompt = withOwnerAnswers("", answered).trim();
   if (answered.channel === "author") {
     const launched = await resumeAuthor(paths, { adapter: options.adapter, extraPrompt, onLogLine: options.onLogLine });
@@ -981,12 +1257,14 @@ export async function answerAgentQuestions(
     adapter: options.adapter ?? previous?.adapter,
     fromProof: previous?.fromProof === true,
     onLogLine: options.onLogLine,
+    extraPrompt,
     resume: true,
+    code: answered.channel === "implement",
   });
   return {
     result: launched.result,
     message: launched.message,
-    channel: "implement",
+    channel: answered.channel,
     launch: launched.launch,
   };
 }
@@ -994,14 +1272,14 @@ export async function answerAgentQuestions(
 export async function discardAgentQuestions(
   paths: PackPaths,
   launch: LaunchAdapterResult | null,
-): Promise<{ result: CompileResult; message: string; channel: "author" | "improve" | "implement" }> {
+): Promise<{ result: CompileResult; message: string; channel: "author" | "improve" | "implement" | "plan" }> {
   const open = await readAgentQuestions(paths);
   if (!isOpenQuestions(open)) {
     throw new AgentAnswersError("No open questions to discard.");
   }
-  if (open.channel === "implement") {
+  if (open.channel === "implement" || open.channel === "plan") {
     const stopped = await stopImplement(paths, launch);
-    return { result: stopped.result, message: stopped.message, channel: "implement" };
+    return { result: stopped.result, message: stopped.message, channel: open.channel };
   }
   if (open.channel === "author") {
     const stopped = await stopAuthor(paths, launch);

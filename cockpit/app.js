@@ -498,6 +498,10 @@ function openQuestions() {
   return round;
 }
 
+function isImplementChannel(channel) {
+  return channel === "implement" || channel === "plan";
+}
+
 function questionsContinueEnabled(round = openQuestions()) {
   if (!round) return false;
   return round.questions.every((question) => {
@@ -524,8 +528,8 @@ function syncQuestionDrafts(round) {
 function maybeOpenQuestions(round) {
   const key = round ? `${round.channel}|${round.at}` : "";
   if (key && key !== lastQuestionsKey) {
-    currentView = round.channel === "implement" ? "implement" : "define";
-    if (round.channel === "implement") implementTab = "questions";
+    currentView = isImplementChannel(round.channel) ? "implement" : "define";
+    if (isImplementChannel(round.channel)) implementTab = "questions";
     else defineTab = "questions";
   }
   lastQuestionsKey = key;
@@ -790,7 +794,7 @@ function renderQuestions() {
     hidden: !askingDefine,
   });
   if (els.implementQuestions) {
-    if (round?.channel === "implement") fillQuestionPanel(els.implementQuestions, round);
+    if (isImplementChannel(round?.channel)) fillQuestionPanel(els.implementQuestions, round);
     else {
       els.implementQuestions.innerHTML = "";
       delete els.implementQuestions.dataset.sig;
@@ -849,7 +853,7 @@ function renderDefineLayout() {
 }
 
 function renderImplementLayout() {
-  const asking = openQuestions()?.channel === "implement";
+  const asking = isImplementChannel(openQuestions()?.channel);
   const hasActivity = implementLines.length > 0;
   const showTabs = Boolean(asking && hasActivity);
   if (!asking) implementTab = "questions";
@@ -1824,7 +1828,7 @@ function viewForAction(id) {
     return "define";
   }
   if (id === "answer-questions" || id === "discard-questions" || id === "skip-all-questions") {
-    return openQuestions()?.channel === "implement" ? "implement" : "define";
+    return isImplementChannel(openQuestions()?.channel) ? "implement" : "define";
   }
   if (id === "implement" || id === "stop-implement" || id === "ignore-build" || id === "fix-from-proof") {
     return state?.health?.build?.owned === false ? null : "implement";
@@ -1944,7 +1948,7 @@ async function runStageAction(id) {
     return;
   }
   if (id === "stop-implement") {
-    if (openQuestions()?.channel === "implement") {
+    if (isImplementChannel(openQuestions()?.channel)) {
       const confirmed = await askDiscardQuestions();
       if (!confirmed) return;
     }

@@ -15,15 +15,33 @@ describe("emitJevPack", () => {
     );
     const spec = compileMarkdown("invoice-approval", markdown).spec;
     expect(spec).not.toBeNull();
-    const pack = emitJevPack(spec!);
+    const pack = emitJevPack(spec!, {
+      markdown,
+      contextFiles: ["UC-001__replace-modal.png"],
+      standards: {
+        pack: { path: "/repo/docs/requirement-standards/pack.md", source: "convention", text: "Use context/ and BR-001." },
+        document: {
+          path: "/repo/docs/requirement-standards/document.md",
+          source: "convention",
+          text: "Frozen grammar. No hidden acceptance.",
+        },
+      },
+    });
     const ids = pack.questions.map((q) => q.id);
     expect(ids).toContain("rule.observable.BR-001");
     expect(ids).toContain("usecase.contradicts.UC-002");
     expect(ids).toContain("section.score.business-rules");
     expect(ids).toContain("pack.next-id");
     expect(ids).toContain("pack.agent-ready");
-    expect(pack.questions.filter((q) => q.type === "noul").length).toBe(11);
+    expect(ids).toContain("std.document.title-names-problem");
+    expect(ids).toContain("std.pack.completeness");
+    expect(pack.questions.filter((q) => q.id.startsWith("std.")).length).toBe(15);
+    expect(pack.questions.filter((q) => q.type === "noul").length).toBe(26);
     expect(pack.questions.filter((q) => q.type === "score").length).toBe(3);
     expect(pack.questions.filter((q) => q.type === "choice").length).toBe(1);
+    const agentReady = pack.questions.find((q) => q.id === "pack.agent-ready");
+    expect(agentReady?.state.contextFiles).toEqual(["UC-001__replace-modal.png"]);
+    expect(String(agentReady?.state.housePackStandard)).toContain("context/");
+    expect(String(agentReady?.state.houseDocumentStandard)).toContain("hidden acceptance");
   });
 });

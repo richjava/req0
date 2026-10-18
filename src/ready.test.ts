@@ -77,6 +77,50 @@ describe("evaluateReady", () => {
     expect(ready.findings).toEqual([]);
   });
 
+  it("treats house-standard failures as nits, not blockers", () => {
+    const ready = evaluateReady({
+      spec,
+      specState: "valid",
+      personas,
+      hasApiKey: true,
+      jevRun: run([
+        { id: "rule.observable.BR-001", type: "noul", noul: 0.95 },
+        { id: "usecase.contradicts.UC-001", type: "noul", noul: 0.04 },
+        { id: "section.score.business-rules", type: "score", score: 2 },
+        { id: "section.score.use-cases", type: "score", score: 2 },
+        { id: "section.score.roles-permissions", type: "score", score: 2 },
+        { id: "pack.next-id", type: "choice", choice: "BR-001" },
+        { id: "pack.agent-ready", type: "noul", noul: 0.91 },
+        { id: "std.pack.completeness", type: "noul", noul: 0.05 },
+        { id: "std.document.overview-intent", type: "noul", noul: 0.4 },
+      ]),
+    });
+    expect(ready.state).toBe("ready");
+    expect(ready.blockers).toBe(0);
+    expect(ready.nits).toBe(2);
+    expect(ready.findings.every((finding) => finding.kind === "standards" && finding.severity === "nit")).toBe(true);
+  });
+
+  it("keeps observability blockers when a standards noul is also low", () => {
+    const ready = evaluateReady({
+      spec,
+      specState: "valid",
+      personas,
+      hasApiKey: true,
+      jevRun: run([
+        { id: "rule.observable.BR-001", type: "noul", noul: 0.1 },
+        { id: "usecase.contradicts.UC-001", type: "noul", noul: 0.04 },
+        { id: "pack.agent-ready", type: "noul", noul: 0.91 },
+        { id: "std.pack.completeness", type: "noul", noul: 0.05 },
+      ]),
+    });
+    expect(ready.state).toBe("blocked");
+    expect(ready.findings.some((finding) => finding.kind === "untestable_rule" && finding.severity === "blocker")).toBe(
+      true,
+    );
+    expect(ready.findings.some((finding) => finding.kind === "standards" && finding.severity === "nit")).toBe(true);
+  });
+
   it("marks Ready after a passing mock run", () => {
     const ready = evaluateReady({
       spec,

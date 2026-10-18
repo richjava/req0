@@ -97,11 +97,13 @@ async function main(command: string, rest: string[]): Promise<void> {
       let result = launched.result;
       let message = launched.message;
       const used = adapter ?? result.health.build.adapter ?? "cursor";
-      if (launched.launch?.finished) {
+      let current = launched.launch;
+      while (current?.finished) {
         console.log(`Build running — ${message}`);
-        const done = await finishImplement(pack, launched.launch, used);
+        const done = await finishImplement(pack, current, used);
         result = done.result;
         message = done.message;
+        current = done.launch;
       }
       console.log(`Build ${result.health.build.state} — ${message}`);
       console.log(adapterInstructions(used, fromProof ? pack.fixFromProofBrief : pack.implementBrief));

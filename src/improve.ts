@@ -1,5 +1,6 @@
 import { NOUL_PASS } from "./gates.js";
 import { questionsBriefSection } from "./agent-questions.js";
+import { standardsBriefSection, type LoadedStandards } from "./standards.js";
 import type { ReadyFinding, ReadyMeter, SpecAst } from "./types.js";
 
 export class ImproveLockedError extends Error {
@@ -49,6 +50,7 @@ export function emitImproveBrief(input: {
   spec: SpecAst | null;
   ready: ReadyMeter;
   findings?: ReadyFinding[];
+  standards?: LoadedStandards | null;
 }): string {
   const findings = input.findings ?? improveFindings(input.ready);
   const personas = findings.some((finding) => finding.kind === "persona_missing");
@@ -73,6 +75,7 @@ export function emitImproveBrief(input: {
     `- Pack noul is ${noul}. The gate is ${NOUL_PASS.toFixed(2)}.`,
     `- Ready is ${input.ready.state} (${input.ready.blockers} blocker${input.ready.blockers === 1 ? "" : "s"}, ${input.ready.nits} nit${input.ready.nits === 1 ? "" : "s"}).`,
     "- Raise pack noul above the gate and clear Ready blockers.",
+    "- Read the house standards. Satisfy them in substance. Emit frozen grammar. Do not copy those files into the pack.",
     "",
     "## Findings",
     "",
@@ -113,7 +116,9 @@ export function emitImproveBrief(input: {
       ? "- Missing persona: prefer asking whether the owner has a real test user. If they do not, add `email: <role-slug>@example.test` and `password: test-only-not-production` in fixtures/personas.yaml."
       : "- Do not add personas unless a finding is persona_missing.",
     "- You may edit every section the findings name. This is one pack pass.",
+    "- House-standard nits (kind standards) are in this pass when Improve is allowed. They never block Ready by themselves.",
     "",
+    ...standardsBriefSection(input.standards),
     questionsBriefSection().trimEnd(),
     "",
     "## Fence",

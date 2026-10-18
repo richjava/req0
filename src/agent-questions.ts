@@ -19,7 +19,7 @@ export class AgentAnswersError extends Error {
   }
 }
 
-export type AgentQuestionsChannel = "author" | "improve" | "implement";
+export type AgentQuestionsChannel = "author" | "improve" | "implement" | "plan";
 
 export type AgentQuestionKind = "text" | "choice" | "artifact";
 
@@ -109,7 +109,7 @@ export function questionsBriefSection(
     ),
     "~~~~",
     "",
-    "Set `channel` to `author` when filling a new pack from a description, `improve` when patching after Ready, or `implement` when writing product code.",
+    "Set `channel` to `author` when filling a new pack from a description, `improve` when patching after Ready, `plan` when proposing a schema delta before coding, or `implement` when writing product code.",
     "",
   ].join("\n");
 }
@@ -118,7 +118,14 @@ export function parseAgentQuestions(raw: unknown): AgentQuestionsRound | null {
   if (!raw || typeof raw !== "object") return null;
   const body = raw as Record<string, unknown>;
   if (body.version !== 1) return null;
-  if (body.channel !== "author" && body.channel !== "improve" && body.channel !== "implement") return null;
+  if (
+    body.channel !== "author" &&
+    body.channel !== "improve" &&
+    body.channel !== "implement" &&
+    body.channel !== "plan"
+  ) {
+    return null;
+  }
   if (body.status !== "open" && body.status !== "answered") return null;
   if (typeof body.at !== "string" || !body.at.trim()) return null;
   if (!Array.isArray(body.questions) || body.questions.length === 0) return null;

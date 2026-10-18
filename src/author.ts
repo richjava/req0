@@ -3,8 +3,9 @@ import path from "node:path";
 import { excerptForFinding } from "./improve.js";
 import { NOUL_PASS } from "./gates.js";
 import { questionsBriefSection } from "./agent-questions.js";
+import { standardsBriefSection, type LoadedStandards } from "./standards.js";
 import { stackInstruction } from "./stack.js";
-import type { AdapterId, Finding, Health, ProductRepo, ReadyMeter, SpecAst } from "./types.js";
+import { OPTIONAL_H2, type AdapterId, type Finding, type Health, type ProductRepo, type ReadyMeter, type SpecAst } from "./types.js";
 
 export const AUTHOR_MAX_ROUNDS = 8;
 export const AUTHOR_BRIEF_FILE = "author-brief.md";
@@ -320,6 +321,7 @@ export function emitAuthorBrief(input: {
   siblings: SiblingSummary[];
   product: { empty: boolean; stack: string; adapter: AdapterId; layout: string; instruction: string };
   contextFiles: string[];
+  standards?: LoadedStandards | null;
 }): string {
   const target =
     input.qualityTarget === "ready"
@@ -335,6 +337,7 @@ export function emitAuthorBrief(input: {
     "",
     `- Quality bar: ${target}`,
     "- Align substance to a high-quality requirement (roles, permissions, business rules, use cases, observables, deny paths) while writing **frozen grammar** so the compiler can parse it.",
+    "- Read the house standards. Satisfy them in substance. Do not copy those files into the pack.",
     "",
     "## Owner description",
     "",
@@ -345,11 +348,11 @@ export function emitAuthorBrief(input: {
     "Replace the starter template. Allowed `##` headings only:",
     "",
     "- Required: `Business Rules`, `Use Cases`, `Roles & Permissions`",
-    "- Optional: `Overview`, `Out of scope`, `Open questions`, `Entities`, `UI notes`",
+    `- Optional: ${OPTIONAL_H2.map((name) => `\`${name}\``).join(", ")}`,
     "- Put the owner's description in `## Overview`. Do not emit `## Description` or template guidance labels.",
     "- Each business rule: `Id: BR-NNN`, Statement, Observable (what a person or test notices).",
     "- Each use case: `Id: UC-NNN`, Actor (a matrix column), Preconditions, numbered Steps with `Open` / `Choose` / `Look for` / `Select`, Outcome of what a person sees.",
-    "- `Choose` is allow. `Look for` is deny. Matrix cells are only `allow` or `deny`.",
+    "- `Choose` is allow. `Look for` is deny. Matrix cells are only `allow` or `deny`. Do not emit `REQ_…` folders, `BR_016.1`, Yes/No/Conditional cells, or an `Artifacts/` heading.",
     "- You may assign the **first** BR- and UC- IDs in this pack. Do not reuse sibling IDs. Do not invent product stack, auth, storage, copy, or screens the owner did not confirm or upload.",
     "- Edit `fixtures/personas.yaml` only when a role is confirmed (email `role-slug@example.test`, password `test-only-not-production`).",
     "",
@@ -428,8 +431,10 @@ export function emitAuthorBrief(input: {
     "- If the owner skipped, leave that area incomplete or ask a *different* question. Never fill skipped gaps with guesses.",
     "- Observables and Outcomes are what a person sees: a status or label, and whether a named control is present, absent, or disabled.",
     "- Do not write matrix talk in Outcome (`is allow`, `is deny`).",
-    "- Conditional template topics (definitions, data, states, empty/error paths) belong in Entities, rules, and use cases when they matter.",
+    "- Conditional topics (definitions, data, verification, related packs, implementation notes) belong in the matching optional headings, or in Entities, rules, and use cases when they matter.",
+    "- Prefer `context/{UC-id}__{purpose}.png` and mention the file from that use case. Screenshots illustrate stated behaviour; they do not replace it.",
     "",
+    ...standardsBriefSection(input.standards),
     questionsBriefSection({ channel: "author", inventIds: true }).trimEnd(),
     "",
     "## Fence",
@@ -447,6 +452,7 @@ export function authorPrompt(briefPath: string): string {
   return [
     "Author this requirement pack from the brief.",
     `Read ${briefPath} and requirement.md.`,
+    "Read the house pack and document standards listed in the brief. Satisfy them in substance; emit frozen grammar.",
     "Write frozen-grammar requirement.md. You may assign the first BR- and UC- IDs. Do not copy sibling IDs.",
     "If a required decision is missing, write derived/agent-questions.json with channel author and stop. Do not guess. Do not patch requirement.md in that same turn.",
     "Read files in context/ including images. Do not invent UI the owner did not confirm or upload.",
