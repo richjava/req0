@@ -10,7 +10,9 @@
   "files": [
     "dist",
     "cockpit",
-    "docs/requirement-template.md"
+    "docs/requirement-template.md",
+    "docs/requirement-standards/pack.md",
+    "docs/requirement-standards/document.md"
   ],
   "repository": {
     "type": "git",

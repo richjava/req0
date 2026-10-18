@@ -54,6 +54,11 @@ export const SECTION_PURPOSES: Record<string, string> = {
   "Open questions": "Optional. Unresolved questions for the owner.",
   Entities: "Optional. Named things the spec talks about.",
   "UI notes": "Optional. Presentation hints that are not rules.",
+  Definitions: "Optional glossary. Not business rules.",
+  "Data Definition": "Optional. Records, uniqueness, derived fields — not behaviour.",
+  "Verification Scenarios": "Optional. How a person would check the pack.",
+  "Related Requirements": "Optional pointers to other packs. Do not restate this pack's rules.",
+  "Implementation Notes": "Optional builder hints. No hidden acceptance criteria.",
 };
 
 export function sectionCatalog(): { name: string; required: boolean; purpose: string }[] {

@@ -126,6 +126,10 @@ describe("improve pass", () => {
     const brief = emitImproveBrief({
       spec,
       ready: ready([packGate, untestable], { packNoul: 0.69 }),
+      standards: {
+        pack: { path: "/repo/docs/requirement-standards/pack.md", source: "convention", text: "pack" },
+        document: { path: "/repo/docs/requirement-standards/document.md", source: "convention", text: "document" },
+      },
     });
     expect(brief).toContain("Opinionated writer pass");
     expect(brief).toContain("Pack noul is 0.69");
@@ -138,12 +142,32 @@ describe("improve pass", () => {
     expect(brief).not.toContain("Do not interview the owner");
     expect(brief).not.toContain("Owner answers");
     expect(brief).not.toContain("Patch only this finding");
+    expect(brief).toContain("docs/requirement-standards/pack.md");
+    expect(brief).toContain("House standards");
   });
 
   it("refuses Improve when Ready and pack noul is at the gate", () => {
     expect(() =>
       assertImproveAllowed(ready([], { state: "ready", reason: "passed", packNoul: 0.75, findings: [] })),
     ).toThrow(ImproveLockedError);
+  });
+
+  it("does not reopen Improve for leftover standards nits after Ready", () => {
+    expect(
+      improveAllowed(
+        ready(
+          [
+            {
+              id: "ready.std.pack.completeness",
+              kind: "standards",
+              severity: "nit",
+              message: "std.pack.completeness is uncertain.",
+            },
+          ],
+          { state: "ready", reason: "passed", packNoul: 0.91 },
+        ),
+      ),
+    ).toBe(false);
   });
 
   it("puts the improve brief path in the Cursor prompt", () => {

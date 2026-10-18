@@ -67,6 +67,8 @@ docs/requirements/invoice-approval/
 
 First run asks how code should be written (**I’ll write the code**, **Cursor**, **Copilot**, **Claude**, or **Codex**) and, if an agent will implement, which stack. That writes `req0.json` at the product repo root. Edit that file later: `"implement": false` turns Implement off (same as **I’ll write the code**); `"adapter": "cursor"` (or `copilot`, `claude`, `codex`) records which CLI to launch.
 
+House standards (optional freeform markdown) live at `docs/requirement-standards/pack.md` and `document.md`. Authoring, Improve, and Implement **Read** those files and follow them in substance while still emitting frozen `requirement.md` grammar. Point `req0.json` at other paths with `"standards": { "pack": "…", "document": "…" }`. Missing files fall back to the copies shipped with the package. Jev scores the pack against that house style as Ready **nits** only — they do not block Implement.
+
 Copy names-only env vars into `.env` as needed. Do not put secrets in `.env.example`.
 
 | Variable | Used for |
@@ -88,7 +90,7 @@ Install the agent CLI you recorded: [Cursor](https://cursor.com) agent, [GitHub 
 
 ## Grammar (short)
 
-`requirement.md` needs one `#` title and these `##` sections: **Business Rules**, **Use Cases**, **Roles & Permissions**. Rules use `Id: BR-001` with Statement and Observable. Use cases use `Id: UC-001` with Actor, numbered Steps, and Outcome. The roles table cells are only `allow` or `deny`. Full rules: [docs/grammar.md](https://github.com/richjava/req0/blob/main/docs/grammar.md).
+`requirement.md` needs one `#` title and these `##` sections: **Business Rules**, **Use Cases**, **Roles & Permissions**. Optional headings include Overview, Definitions, Data Definition, Verification Scenarios, Related Requirements, and Implementation Notes. Rules use `Id: BR-001` with Statement and Observable. Use cases use `Id: UC-001` with Actor, numbered Steps, and Outcome. The roles table cells are only `allow` or `deny`. Full rules: [docs/grammar.md](https://github.com/richjava/req0/blob/main/docs/grammar.md).
 
 ## Docs
 

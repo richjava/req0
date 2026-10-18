@@ -234,6 +234,16 @@ export function evaluateReady(input: {
         });
       }
     }
+
+    for (const answer of run.answers) {
+      if (!answer.id.startsWith("std.") || typeof answer.noul !== "number") continue;
+      classifyStandardsNoul(findings, {
+        id: `ready.${answer.id}`,
+        noul: answer.noul,
+        failMessage: `${answer.id} does not meet the house standard (noul ${fmt(answer.noul)}).`,
+        uncertainMessage: `${answer.id} is uncertain against the house standard (noul ${fmt(answer.noul)}).`,
+      });
+    }
   }
 
   const blockers = findings.filter((finding) => finding.severity === "blocker").length;
@@ -321,6 +331,25 @@ function goingCopy(health: Health, ready: ReadyMeter): string {
     return "The pack is valid. Ready stays Not yet until a TypeSafe API key is set. Persona checks do not need a key.";
   }
   return "The pack is valid. Check it with Jev to turn on Ready.";
+}
+
+function classifyStandardsNoul(
+  findings: ReadyFinding[],
+  input: {
+    id: string;
+    noul: number;
+    failMessage: string;
+    uncertainMessage: string;
+  },
+): void {
+  if (input.noul >= NOUL_PASS) return;
+  findings.push({
+    id: input.id,
+    kind: "standards",
+    severity: "nit",
+    message: input.noul <= NOUL_FAIL ? input.failMessage : input.uncertainMessage,
+    noul: input.noul,
+  });
 }
 
 function classifyNoul(

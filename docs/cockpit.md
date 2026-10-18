@@ -27,6 +27,8 @@ Create-pack stays a Start gate. If the product repo has no coding choice yet, th
 
 Display names are **Define / Implement / QA** and Judgment status **Clear**. File keys in `health.json` stay `spec` / `ready` / `build` / `proof`.
 
+House standards live at the product repo (`docs/requirement-standards/pack.md` and `document.md`, or `req0.json` `"standards"`). Spec lists the extra optional headings those docs may use. After Check, standards findings show on Judgment as nits — they do not add a fifth meter and they do not block Implement.
+
 ## Health meters
 
 A meter that is not born yet reads **Not yet**, never Fail. Graph badges use the same states with display labels.

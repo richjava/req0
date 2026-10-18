@@ -23,6 +23,10 @@ describe("pack compile", () => {
     expect(result.health.spec.state).toBe("valid");
     expect(result.jevPack?.catalog).toBe("m2-authoring-v1");
     expect(result.jevPack?.questions.some((q) => q.id === "rule.observable.BR-001")).toBe(true);
+    expect(result.jevPack?.questions.some((q) => q.id === "std.pack.completeness")).toBe(true);
+    const agentReady = result.jevPack?.questions.find((q) => q.id === "pack.agent-ready");
+    expect(agentReady?.state).toHaveProperty("housePackStandard");
+    expect(agentReady?.state).toHaveProperty("contextFiles");
     const health = JSON.parse(
       await readFile(path.join(repoRoot, "docs/requirements/invoice-approval/derived/health.json"), "utf8"),
     );

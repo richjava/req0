@@ -107,5 +107,7 @@ describe("sectionCatalog", () => {
     const names = sectionCatalog().map((section) => section.name);
     expect(names.slice(0, 3)).toEqual(["Business Rules", "Use Cases", "Roles & Permissions"]);
     expect(names).toContain("Overview");
+    expect(names).toContain("Definitions");
+    expect(names).toContain("Implementation Notes");
   });
 });

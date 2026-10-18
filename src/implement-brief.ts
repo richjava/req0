@@ -1,5 +1,6 @@
 import type { PersonasResult } from "./personas.js";
 import { questionsBriefSection } from "./agent-questions.js";
+import { standardsBriefSection, type LoadedStandards } from "./standards.js";
 import { DEFAULT_STACK, isAmplifyStack, stackInstruction } from "./stack.js";
 import type { AdapterId, ProductRepo, SpecAst, StackChoice } from "./types.js";
 
@@ -8,12 +9,14 @@ export function emitImplementBrief(input: {
   repo: ProductRepo;
   adapter: AdapterId;
   personas?: PersonasResult;
+  standards?: LoadedStandards | null;
 }): string {
   const { spec, repo, adapter, personas } = input;
   const lines: string[] = [
     `# Implement: ${spec.title}`,
     "",
     "Portable coding-agent brief. Read this file, then the compiled `derived/spec.json`. Do not invent rule, use-case, or role IDs.",
+    "Read the house pack and document standards listed below. Satisfy them in substance. The spec already uses frozen grammar; do not rename IDs or headings.",
     "",
     "## Stack",
     "",
@@ -99,6 +102,19 @@ export function emitImplementBrief(input: {
   if (spec.optional["Open questions"]?.trim()) {
     lines.push("## Open questions", "", spec.optional["Open questions"].trim(), "");
   }
+  for (const name of [
+    "Definitions",
+    "Data Definition",
+    "Verification Scenarios",
+    "Related Requirements",
+    "Implementation Notes",
+  ] as const) {
+    if (spec.optional[name]?.trim()) {
+      lines.push(`## ${name}`, "", spec.optional[name]!.trim(), "");
+    }
+  }
+
+  lines.push(...standardsBriefSection(input.standards));
 
   lines.push(
     "## Product README",
@@ -120,6 +136,7 @@ export function emitImplementBrief(input: {
     "- Write `README.md` at the product repo root using the Product README section. Use this requirement's title and pack paths. Do not invent a product name.",
     "- The seed/reset script command must match `runtime.yaml` `resetCommand`.",
     "- First-party `/login` must match those selectors.",
+    "- Keep `context/` screenshots named `{UC-id}__{purpose}.ext` and referenced from the spec. Do not treat a screenshot as the spec.",
     "",
     questionsBriefSection().trimEnd(),
     "",

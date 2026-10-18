@@ -1,6 +1,7 @@
 # Implement: Invoice approval
 
 Portable coding-agent brief. Read this file, then the compiled `derived/spec.json`. Do not invent rule, use-case, or role IDs.
+Read the house pack and document standards listed below. Satisfy them in substance. The spec already uses frozen grammar; do not rename IDs or headings.
 
 ## Stack
 
@@ -140,6 +141,16 @@ An invoice belongs to exactly one department. It has status Unpaid or Approved, 
 
 The assigned approver must be a manager whose department equals the invoice's department. Role-level `approve-invoice` allow for Manager is further restricted by BR-001, BR-004, and BR-005.
 
+## House standards
+
+Read both files. Satisfy them in **substance**. Emit **frozen grammar** (the required and optional `##` headings, `BR-NNN` / `UC-NNN`, and matrix `allow`/`deny`). Do not copy these files into the pack. Do not emit headings the compiler rejects.
+If a house rule conflicts with the owner, write `derived/agent-questions.json` and stop. Do not guess.
+
+- Pack standard: `docs/requirement-standards/pack.md`
+- Document standard: `docs/requirement-standards/document.md`
+
+Artifacts live in this pack's `context/` folder. Prefer `{UC-id}__{purpose}.ext` (example: `UC-001__replace-modal.png`) and mention them from the matching use case. Screenshots illustrate; they must not be the only place a behaviour is specified.
+
 ## Product README
 
 Write `README.md` at the product repo root so a stranger can run the app. If a README already exists, update the setup section. Use this requirement's title and the pack paths below. Do not invent a product name.
@@ -188,6 +199,58 @@ Req0 runtime: `docs/requirements/invoice-approval/fixtures/runtime.yaml`.
 - Write `README.md` at the product repo root using the Product README section. Use this requirement's title and pack paths. Do not invent a product name.
 - The seed/reset script command must match `runtime.yaml` `resetCommand`.
 - First-party `/login` must match those selectors.
+- Keep `context/` screenshots named `{UC-id}__{purpose}.ext` and referenced from the spec. Do not treat a screenshot as the spec.
+
+## If you must ask
+
+Do not guess a required decision (trade-off, missing intent, real test user vs fixture). Do not invent BR- or UC- IDs.
+Write `derived/agent-questions.json` using the shape below, replace the file, then **stop**. Do not patch `requirement.md` or product code in the same turn.
+At most four questions. Highest-leverage gaps first. For `choice`, put your recommended option first. Set `allowCustom` true when the owner may type something else.
+The owner may skip one question or all of them. Skipped is not an answer: do not assume. Ask a different question later, or leave that gap in `## Open questions`.
+If a screenshot or mock would resolve a gap, use `kind: "artifact"` (PNG/JPG/WebP). The owner may skip the upload.
+The owner answers in the cockpit. The next launch includes those answers. Then continue.
+Do not put secrets in this file.
+
+~~~~json
+{
+  "version": 1,
+  "channel": "implement",
+  "status": "open",
+  "at": "2026-01-01T00:00:00.000Z",
+  "questions": [
+    {
+      "id": "q1",
+      "prompt": "Which option should we take?",
+      "kind": "choice",
+      "options": [
+        {
+          "id": "a",
+          "label": "Option A (recommended)"
+        },
+        {
+          "id": "b",
+          "label": "Option B"
+        }
+      ],
+      "required": true,
+      "allowCustom": true
+    },
+    {
+      "id": "q2",
+      "prompt": "Upload a screenshot of the screen this requirement covers, if you have one.",
+      "kind": "artifact",
+      "required": false,
+      "accept": [
+        "image/png",
+        "image/jpeg",
+        "image/webp"
+      ]
+    }
+  ]
+}
+~~~~
+
+Set `channel` to `author` when filling a new pack from a description, `improve` when patching after Ready, or `implement` when writing product code.
 
 ## Security baseline
 

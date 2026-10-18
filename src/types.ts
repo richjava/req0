@@ -10,6 +10,11 @@ export const OPTIONAL_H2 = [
   "Open questions",
   "Entities",
   "UI notes",
+  "Definitions",
+  "Data Definition",
+  "Verification Scenarios",
+  "Related Requirements",
+  "Implementation Notes",
 ] as const;
 
 export type RequiredH2 = (typeof REQUIRED_H2)[number];
@@ -156,6 +161,7 @@ export type ReadyFindingKind =
   | "matrix_contradiction"
   | "pack_gate"
   | "section_score"
+  | "standards"
   | "uncertain";
 
 export type ReadyFinding = {
@@ -225,6 +231,8 @@ export type Req0Config = {
   stack?: StackChoice;
   /** When false, Req0 does not own Implement. Prove uses Ready + runtime.yaml. */
   implement?: boolean;
+  /** Product-repo house standards. Paths are relative to the product root. */
+  standards?: { pack?: string; document?: string };
 };
 
 export type ProductRepo = {

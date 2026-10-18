@@ -172,11 +172,19 @@ describe("author markdown and brief", () => {
         instruction: "This repo already has a product app.",
       },
       contextFiles: ["mock.png"],
+      standards: {
+        pack: { path: "/repo/docs/requirement-standards/pack.md", source: "convention", text: "pack" },
+        document: { path: "/repo/docs/requirement-standards/document.md", source: "convention", text: "document" },
+      },
     });
     expect(brief).toContain("Do not guess");
     expect(brief).toContain("channel\": \"author\"");
     expect(brief).toContain("context/mock.png");
     expect(brief).toContain("You may assign the **first** BR- and UC- IDs");
+    expect(brief).toContain("docs/requirement-standards/pack.md");
+    expect(brief).toContain("docs/requirement-standards/document.md");
+    expect(brief).toContain("Satisfy them in **substance**");
+    expect(brief).toContain("`Definitions`");
     expect(brief).not.toContain("Do not invent BR- or UC- IDs");
   });
 });

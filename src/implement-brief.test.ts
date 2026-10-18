@@ -25,6 +25,10 @@ describe("emitImplementBrief", () => {
       repo: { root: repoRoot, empty: true, stack: DEFAULT_STACK, recorded: false, adapter: "manual", implement: true },
       adapter: "manual",
       personas,
+      standards: {
+        pack: { path: "/repo/docs/requirement-standards/pack.md", source: "convention", text: "pack" },
+        document: { path: "/repo/docs/requirement-standards/document.md", source: "convention", text: "document" },
+      },
     });
     expect(brief).toContain("BR-001");
     expect(brief).toContain("UC-002");
@@ -40,6 +44,8 @@ describe("emitImplementBrief", () => {
     expect(brief).toContain("fixtures/runtime.yaml");
     expect(brief).toContain("agent-questions.json");
     expect(brief).toContain("amplify-gen2");
+    expect(brief).toContain("docs/requirement-standards/pack.md");
+    expect(brief).toContain("House standards");
     expect(brief).not.toContain("## AWS");
     expect(brief).not.toContain("test-only-not-production");
   });

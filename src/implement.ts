@@ -94,6 +94,7 @@ export function implementPrompt(briefPath: string, stackId?: string): string {
   return [
     "Implement this requirement from the brief.",
     `Read ${briefPath} and derived/spec.json.`,
+    "Read the house standards listed in the brief. Satisfy them in substance. Do not rename spec IDs or headings.",
     "Do not invent spec IDs. Implement only the named BR- and UC- IDs.",
     "If a required decision is missing, write derived/agent-questions.json and stop. Do not guess stack, auth, storage, or owner-facing copy. Do not write product code in that same turn.",
     "If this product repo has no customer app, use the stack recorded in req0.json.",
@@ -125,6 +126,7 @@ export function improvePrompt(briefPath: string): string {
   return [
     "Improve this requirement pack from the brief.",
     `Read ${briefPath} and requirement.md.`,
+    "Read the house standards listed in the brief. Satisfy them in substance; emit frozen grammar.",
     "Patch requirement.md only. If the brief asks for a persona, you may also edit fixtures/personas.yaml.",
     "Outcome is what a person sees. Do not paste matrix allow/deny cells into Outcome. Look for is deny; Choose is allow.",
     "Do not invent spec IDs. Do not implement the product app.",

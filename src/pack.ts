@@ -21,6 +21,7 @@ import { beginImproveReview, ImproveReviewPendingError, readImproveSnapshot, rej
 import { emitImplementBrief } from "./implement-brief.js";
 import { hasJevAccess, JevRequestError, JevUnavailableError, resolveJevClient, type JevClient } from "./jev.js";
 import { emitJevPack } from "./jev-pack.js";
+import { loadStandards } from "./standards.js";
 import { parsePersonasYaml, type PersonasResult } from "./personas.js";
 import { emitProofReport } from "./proof-report.js";
 import { emitQaPlan, emitQaPlanYaml } from "./qa-plan.js";
@@ -49,6 +50,7 @@ import { parseRuntimeYaml, type RuntimeResult } from "./runtime.js";
 import {
   inspectProductRepo,
   needsStackChoice,
+  readReq0Config,
   resolveStackId,
   StackRequiredError,
   UnknownStackError,
@@ -282,9 +284,17 @@ export async function loadPersonas(paths: PackPaths): Promise<PersonasResult> {
 export async function compilePack(paths: PackPaths): Promise<CompileResult> {
   const markdown = await readMarkdown(paths);
   let result = compileMarkdown(paths.id, markdown);
-  if (result.spec) result = { ...result, jevPack: emitJevPack(result.spec) };
   const personas = await loadPersonas(paths);
   const repo = await inspectProductRepo(paths.root);
+  const config = repo.root ? await readReq0Config(repo.root) : null;
+  const standards = await loadStandards(repo.root, config);
+  const contextFiles = await listContextFiles(paths);
+  if (result.spec) {
+    result = {
+      ...result,
+      jevPack: emitJevPack(result.spec, { markdown, contextFiles, standards }),
+    };
+  }
   if (repo.root && repo.recorded) {
     await writeAmplifyEnvExampleIfMissing(repo.root, repo.stack);
   }
@@ -296,6 +306,7 @@ export async function compilePack(paths: PackPaths): Promise<CompileResult> {
         repo,
         adapter: repo.adapter,
         personas,
+        standards,
       }),
     };
   }
@@ -688,10 +699,13 @@ export async function writeImproveBrief(
   const result = compiled ?? (await compilePack(paths));
   assertImproveAllowed(result.health.ready);
   const findings = improveFindings(result.health.ready);
+  const repo = await inspectProductRepo(paths.root);
+  const config = repo.root ? await readReq0Config(repo.root) : null;
   const brief = emitImproveBrief({
     spec: result.spec,
     ready: result.health.ready,
     findings,
+    standards: await loadStandards(repo.root, config),
   });
   await mkdir(paths.derived, { recursive: true });
   await writeFile(paths.improveBrief, brief, "utf8");
@@ -738,6 +752,7 @@ export async function writeAuthorBrief(
     siblings: await siblingSummaries(paths),
     product: productBriefBits(repo, await listProductLayout(repo.root)),
     contextFiles: await listContextFiles(paths),
+    standards: await loadStandards(repo.root, repo.root ? await readReq0Config(repo.root) : null),
   });
   await mkdir(paths.derived, { recursive: true });
   await writeFile(paths.authorBrief, brief, "utf8");
